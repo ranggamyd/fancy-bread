@@ -9,13 +9,18 @@ class Purchase extends Model
 {
     use HasFactory;
 
+    public function vendor()
+    {
+        return $this->belongsTo(Vendor::class);
+    }
+
     public function purchaseItems()
     {
         return $this->hasMany(PurchaseItem::class);
     }
 
-    public function vendor()
+    public function purchaseReturns()
     {
-        return $this->belongsTo(Vendor::class);
+        return $this->hasMany(PurchaseReturn::class);
     }
 }

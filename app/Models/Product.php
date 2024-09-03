@@ -18,4 +18,24 @@ class Product extends Model
     {
         return $this->belongsToMany(Category::class, 'product_categories');
     }
+
+    public function purchaseItems()
+    {
+        return $this->hasMany(PurchaseItem::class);
+    }
+
+    public function purchaseReturnItems()
+    {
+        return $this->hasMany(PurchaseReturnItem::class);
+    }
+
+    public function saleItems()
+    {
+        return $this->hasMany(SaleItem::class);
+    }
+
+    public function saleReturnItems()
+    {
+        return $this->hasMany(SaleReturnItem::class);
+    }
 }

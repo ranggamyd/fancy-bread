@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use Filament\Facades\Filament;
+use Filament\Navigation\NavigationGroup;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\ServiceProvider;
 
@@ -21,5 +23,13 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Model::unguard();
+
+        Filament::serving(function () {
+            Filament::registerNavigationGroups([
+                NavigationGroup::make()->label('Fancy Master'),
+                NavigationGroup::make()->label('Transaction'),
+                NavigationGroup::make()->label('Miscellaneous'),
+            ]);
+        });
     }
 }

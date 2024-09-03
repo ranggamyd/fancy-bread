@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('code')->unique();
             $table->string('name');
-            $table->foreignId('brand_id')->nullOnDelete();
+            $table->foreignId('brand_id')->constrained()->restrictOnDelete();
             $table->text('description')->nullable();
             $table->string('image')->nullable();
             $table->float('pre_tax_price')->default(0);

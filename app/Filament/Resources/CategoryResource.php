@@ -2,16 +2,24 @@
 
 namespace App\Filament\Resources;
 
-use App\Filament\Resources\CategoryResource\Pages;
-use App\Filament\Resources\CategoryResource\RelationManagers;
 use App\Models\Category;
-use Filament\Forms;
 use Filament\Forms\Form;
-use Filament\Resources\Resource;
-use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Filament\Resources\Resource;
+use Filament\Forms\Components\Group;
+use Filament\Forms\Components\Section;
+use Filament\Tables\Actions\EditAction;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Forms\Components\TextInput;
+use Filament\Tables\Actions\DeleteAction;
+use Filament\Forms\Components\Placeholder;
+use Filament\Tables\Actions\BulkActionGroup;
+use Filament\Forms\Components\MarkdownEditor;
+use Filament\Tables\Actions\DeleteBulkAction;
+use App\Filament\Resources\CategoryResource\Pages\EditCategory;
+use App\Filament\Resources\CategoryResource\Pages\CreateCategory;
+use App\Filament\Resources\CategoryResource\Pages\ListCategories;
+use App\Filament\Resources\CategoryResource\RelationManagers\ProductsRelationManager;
 
 class CategoryResource extends Resource
 {
@@ -19,83 +27,80 @@ class CategoryResource extends Resource
 
     protected static ?string $navigationGroup = 'Fancy Master';
 
+    protected static ?int $navigationSort = 3;
+
     protected static ?string $navigationIcon = 'heroicon-o-tag';
 
     public static function form(Form $form): Form
     {
-        return $form
-            ->schema([
-                Forms\Components\Group::make()
-                    ->schema([
-                        Forms\Components\Section::make('Category Information')
-                            ->schema([
-                                Forms\Components\TextInput::make('name')
-                                    ->required()
-                                    ->dehydrateStateUsing(fn(string $state): string => ucwords($state)),
+        return $form->schema([
+            Group::make()->schema([
+                Section::make('Category Information')->schema([
+                    TextInput::make('name')
+                        ->required()
+                        ->live(onBlur: true)
+                        ->afterStateUpdated(fn($component, $state) => $component->state(ucwords(strtolower($state)))),
 
-                                Forms\Components\MarkdownEditor::make('description'),
-                            ]),
-                    ])
-                    ->columnSpan(['lg' => fn(?Category $record) => $record === null ? 3 : 2]),
+                    MarkdownEditor::make('description'),
+                ]),
+            ])->columnSpan(['lg' => fn(?Category $record) => $record === null ? 3 : 2]),
 
-                Forms\Components\Group::make()
-                    ->schema([
-                        Forms\Components\Section::make('Meta Information')
-                            ->schema([
-                                Forms\Components\Placeholder::make('created_at')
-                                    ->label('Created at')
-                                    ->content(fn(Category $record): ?string => $record->created_at?->diffForHumans()),
+            Group::make()->schema([
+                Section::make('Meta Information')->schema([
+                    Placeholder::make('created_at')
+                        ->label('Created at')
+                        ->content(fn(Category $record): ?string => $record->created_at?->diffForHumans()),
 
-                                Forms\Components\Placeholder::make('updated_at')
-                                    ->label('Last modified at')
-                                    ->content(fn(Category $record): ?string => $record->updated_at?->diffForHumans()),
-                            ])
-                    ])
-                    ->columnSpan(['lg' => 1])
-                    ->hidden(fn(?Category $record) => $record === null),
-            ])
-            ->columns(3);
+                    Placeholder::make('updated_at')
+                        ->label('Last modified at')
+                        ->content(fn(Category $record): ?string => $record->updated_at?->diffForHumans()),
+                ])->collapsible(),
+            ])->columnSpan(['lg' => 1])->hidden(fn(?Category $record) => $record === null),
+        ])->columns(3);
     }
 
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('name')
+                TextColumn::make('name')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
 
-                Tables\Columns\TextColumn::make('description')
+                TextColumn::make('products_count')
+                    ->counts('products')
+                    ->alignCenter()
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
 
+                TextColumn::make('description')
+                    ->limit(10)
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable()
+                    ->toggledHiddenByDefault(),
             ])
+            ->defaultSort('name')
             ->filters([
                 //
             ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
-            ]);
+            ->actions([EditAction::make(), DeleteAction::make()])
+            ->bulkActions([BulkActionGroup::make([DeleteBulkAction::make()])]);
     }
 
     public static function getRelations(): array
     {
-        return [
-            \App\Filament\Resources\CategoryResource\RelationManagers\ProductsRelationManager::class,
-        ];
+        return [ProductsRelationManager::class];
     }
 
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListCategories::route('/'),
-            'create' => Pages\CreateCategory::route('/create'),
-            'edit' => Pages\EditCategory::route('/{record}/edit'),
+            'index' => ListCategories::route('/'),
+            'create' => CreateCategory::route('/create'),
+            'edit' => EditCategory::route('/{record}/edit'),
         ];
     }
 }

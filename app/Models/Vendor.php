@@ -13,4 +13,9 @@ class Vendor extends Model
     {
         return $this->hasMany(Purchase::class);
     }
+
+    public function purchaseReturns()
+    {
+        return $this->hasMany(PurchaseReturn::class);
+    }
 }

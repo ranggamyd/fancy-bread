@@ -17,20 +17,11 @@ class ProductsRelationManager extends RelationManager
 
     public function form(Form $form): Form
     {
-        return ProductResource::form($form);
+        return ProductResource::form($form, $this->getOwnerRecord());
     }
 
     public function table(Table $table): Table
     {
-        return ProductResource::table($table)
-            ->headerActions([
-                Tables\Actions\CreateAction::make(),
-            ])
-            ->actions([
-                Tables\Actions\DeleteAction::make(),
-            ])
-            ->groupedBulkActions([
-                Tables\Actions\DeleteBulkAction::make(),
-            ]);
+        return ProductResource::table($table)->headerActions([Tables\Actions\CreateAction::make()]);
     }
 }

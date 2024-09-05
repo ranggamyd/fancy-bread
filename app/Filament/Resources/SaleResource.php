@@ -203,7 +203,7 @@ class SaleResource extends Resource
                         ->readOnly()
                         ->required()
                         ->numeric()
-                        ->default(0)
+                        ->default(1)
                         ->inlineLabel(),
 
                     TextInput::make('subtotal')
@@ -384,6 +384,7 @@ class SaleResource extends Resource
                         ->icon('heroicon-o-arrow-uturn-left')
                         ->url(fn(Sale $record): string => SaleReturnResource::getUrl('create', ['sale_id' => $record->id]))
                         ->openUrlInNewTab()
+                        ->hidden(fn(Sale $record) => $record->saleReturns->count() > 0)
                         ->color('danger'),
                 ])
             ])

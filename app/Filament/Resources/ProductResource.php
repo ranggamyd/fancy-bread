@@ -50,6 +50,11 @@ class ProductResource extends Resource
     protected static ?int $navigationSort = 1;
 
     protected static ?string $navigationIcon = 'heroicon-o-cube';
+    
+    public static function getNavigationBadgeTooltip(): ?string
+    {
+        return 'Product(s) with low stock';
+    }
 
     public static function form(Form $form, Brand $brand = null, Category $category = null): Form
     {

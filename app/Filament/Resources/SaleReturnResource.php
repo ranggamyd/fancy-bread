@@ -99,7 +99,7 @@ class SaleReturnResource extends Resource
                         ->required()
                         ->relationship('customer', modifyQueryUsing: fn(Builder $query) => $query->orderBy('code')->orderBy('name'))
                         ->getOptionLabelFromRecordUsing(fn(Model $record) => "({$record->code}) {$record->name} - {$record->short_address}")
-                        ->default($customer ? $customer?->id : Sale::find(request('purchase_id'))?->customer_id),
+                        ->default($customer ? $customer?->id : Sale::find(request('sale_id'))?->customer_id),
 
                     MarkdownEditor::make('notes'),
                 ]),
@@ -133,7 +133,7 @@ class SaleReturnResource extends Resource
                                 ->required()
                                 ->numeric()
                                 ->default(1)
-                                ->maxValue(fn(Get $get) => Product::find($get('product_id'))?->stock ?? 0)
+                                // ->maxValue(fn(Get $get) => Product::find($get('product_id'))?->stock ?? 0)
                                 ->live(onBlur: true)
                                 ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
 
@@ -191,22 +191,22 @@ class SaleReturnResource extends Resource
                                     return ProductResource::getUrl('edit', ['record' => $product]);
                                 }, shouldOpenInNewTab: true)
                                 ->hidden(fn(array $arguments, Repeater $component): bool => blank($component->getRawItemState($arguments['item'])['product_id'])),
-                        ])
-                        // ->mutateRelationshipDataBeforeCreateUsing(function ($data) {
-                        //     $product = Product::find($data['product_id']);
-                        //     $product->stock = $product->stock - $data['qty'];
-                        //     $product->save();
+                        ]),
+                    // ->mutateRelationshipDataBeforeCreateUsing(function ($data) {
+                    //     $product = Product::find($data['product_id']);
+                    //     $product->stock = $product->stock - $data['qty'];
+                    //     $product->save();
 
-                        //     return $data;
-                        // })
-                        ->mutateRelationshipDataBeforeSaveUsing(function ($data, $record) {
-                            $product = Product::find($data['product_id']);
-                            $product->stock = $product->stock + $record->qty - $data['qty'];
-                            $product->save();
+                    //     return $data;
+                    // })
+                    // ->mutateRelationshipDataBeforeSaveUsing(function ($data, $record) {
+                    //     $product = Product::find($data['product_id']);
+                    //     $product->stock = $product->stock + $record->qty - $data['qty'];
+                    //     $product->save();
 
-                            return $data;
-                            // problem: kalo hapus item repeater stoknya gimana?
-                        }),
+                    //     return $data;
+                    //     // problem: kalo hapus item repeater stoknya gimana?
+                    // }),
                 ]),
 
                 Section::make()->schema([
@@ -214,7 +214,7 @@ class SaleReturnResource extends Resource
                         ->readOnly()
                         ->required()
                         ->numeric()
-                        ->default(0)
+                        ->default(1)
                         ->inlineLabel(),
 
                     TextInput::make('subtotal')
@@ -389,12 +389,6 @@ class SaleReturnResource extends Resource
             ->actions([
                 ViewAction::make(),
                 EditAction::make(),
-                CustomAction::make('return')
-                    ->label('Return')
-                    ->icon('heroicon-o-arrow-uturn-left')
-                    ->url(fn(SaleReturn $record): string => route('filament.admin.resources.sale-returns.create', $record))
-                    ->openUrlInNewTab()
-                    ->color('danger'),
             ])
             ->bulkActions([BulkActionGroup::make([DeleteBulkAction::make()])])
             ->groups([

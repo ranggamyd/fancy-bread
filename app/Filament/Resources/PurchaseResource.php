@@ -22,6 +22,7 @@ use Filament\Tables\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Illuminate\Database\Eloquent\Model;
 use Filament\Forms\Components\TextInput;
+use Filament\Tables\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Filters\SelectFilter;
 use Illuminate\Database\Eloquent\Builder;
@@ -196,7 +197,7 @@ class PurchaseResource extends Resource
                         ->readOnly()
                         ->required()
                         ->numeric()
-                        ->default(0)
+                        ->default(1)
                         ->inlineLabel(),
 
                     TextInput::make('subtotal')
@@ -363,15 +364,23 @@ class PurchaseResource extends Resource
                     ->searchable(),
             ])
             ->actions([
-                ViewAction::make(),
-                EditAction::make(),
-                CustomAction::make('return')
-                    ->label('Return')
-                    ->icon('heroicon-o-arrow-uturn-right')
-                    ->url(fn(Purchase $record): string => PurchaseReturnResource::getUrl('create', ['purchase_id' => $record->id]))
-                    ->openUrlInNewTab()
-                    ->hidden(fn(Model $record) => $record->purchaseReturns->count() > 0)
-                    ->color('danger'),
+                ActionGroup::make([
+                    ViewAction::make(),
+                    EditAction::make()->color('info'),
+                    CustomAction::make('print_invoice')
+                        ->label('Invoice')
+                        ->icon('heroicon-o-printer')
+                        ->url(fn(Purchase $record): string => route('purchases.invoice.print', $record))
+                        ->openUrlInNewTab()
+                        ->color('primary'),
+                    CustomAction::make('return')
+                        ->label('Return')
+                        ->icon('heroicon-o-arrow-uturn-left')
+                        ->url(fn(Purchase $record): string => PurchaseReturnResource::getUrl('create', ['purchase_id' => $record->id]))
+                        ->openUrlInNewTab()
+                        ->hidden(fn(Purchase $record) => $record->purchaseReturns->count() > 0)
+                        ->color('danger'),
+                ])
             ])
             ->bulkActions([BulkActionGroup::make([DeleteBulkAction::make()])])
             ->groups([

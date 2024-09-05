@@ -6,11 +6,11 @@ use App\Models\Driver;
 use Filament\Forms\Form;
 use Filament\Tables\Table;
 use Filament\Resources\Resource;
+use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Radio;
 use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Forms\Components\TextInput;
-use Filament\Notifications\Notification;
 use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Actions\DeleteAction;
 use Filament\Tables\Columns\Layout\Split;
@@ -42,16 +42,6 @@ class DriverResource extends Resource
                 ->suffixIcon('heroicon-o-calendar')
                 ->closeOnDateSelection(),
 
-            TextInput::make('email')
-                ->label('Email address')
-                ->email()
-                ->unique(Driver::class, 'email', ignoreRecord: true),
-
-            TextInput::make('phone')
-                ->label('Phone number')
-                ->numeric()
-                ->unique(Driver::class, 'phone', ignoreRecord: true),
-
             Radio::make('gender')
                 ->options([
                     'Male' => 'Male',
@@ -59,6 +49,19 @@ class DriverResource extends Resource
                 ])
                 ->default('Male')
                 ->inline(),
+
+            Grid::make()
+                ->schema([
+                    TextInput::make('email')
+                        ->label('Email address')
+                        ->email()
+                        ->unique(Driver::class, 'email', ignoreRecord: true),
+
+                    TextInput::make('phone')
+                        ->label('Phone number')
+                        ->tel()
+                        ->unique(Driver::class, 'phone', ignoreRecord: true),
+                ]),
 
             MarkdownEditor::make('address')
                 ->columnSpanFull(),
@@ -77,6 +80,7 @@ class DriverResource extends Resource
                         ->alignLeft(),
 
                     TextColumn::make('address')
+                        ->limit(40)
                         ->searchable()
                         ->sortable()
                         ->color('gray')

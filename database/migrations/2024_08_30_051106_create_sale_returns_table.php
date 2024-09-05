@@ -14,6 +14,7 @@ return new class extends Migration
         Schema::create('sale_returns', function (Blueprint $table) {
             $table->id();
             $table->string('code')->unique();
+            $table->string('sale_id')->constrained()->restrictOnDelete();
             $table->string('invoice')->unique();
             $table->foreignId('customer_id')->constrained()->restrictOnDelete();
             $table->text('notes')->nullable();

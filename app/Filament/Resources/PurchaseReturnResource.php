@@ -188,22 +188,22 @@ class PurchaseReturnResource extends Resource
                                     return ProductResource::getUrl('edit', ['record' => $product]);
                                 }, shouldOpenInNewTab: true)
                                 ->hidden(fn(array $arguments, Repeater $component): bool => blank($component->getRawItemState($arguments['item'])['product_id'])),
-                        ])
-                        // ->mutateRelationshipDataBeforeCreateUsing(function ($data) {
-                        //     $product = Product::find($data['product_id']);
-                        //     $product->stock = $product->stock + $data['qty'];
-                        //     $product->save();
+                        ]),
+                    // ->mutateRelationshipDataBeforeCreateUsing(function ($data) {
+                    //     $product = Product::find($data['product_id']);
+                    //     $product->stock = $product->stock + $data['qty'];
+                    //     $product->save();
 
-                        //     return $data;
-                        // })
-                        ->mutateRelationshipDataBeforeSaveUsing(function ($data, $record) {
-                            $product = Product::find($data['product_id']);
-                            $product->stock = $product->stock - $record->qty + $data['qty'];
-                            $product->save();
+                    //     return $data;
+                    // })
+                    // ->mutateRelationshipDataBeforeSaveUsing(function ($data, $record) {
+                    //     $product = Product::find($data['product_id']);
+                    //     $product->stock = $product->stock - $record->qty + $data['qty'];
+                    //     $product->save();
 
-                            return $data;
-                            // problem: kalo hapus item repeater stoknya gimana?
-                        }),
+                    //     return $data;
+                    //     // problem: kalo hapus item repeater stoknya gimana?
+                    // }),
                 ]),
 
                 Section::make()->schema([
@@ -211,7 +211,7 @@ class PurchaseReturnResource extends Resource
                         ->readOnly()
                         ->required()
                         ->numeric()
-                        ->default(0)
+                        ->default(1)
                         ->inlineLabel(),
 
                     TextInput::make('subtotal')

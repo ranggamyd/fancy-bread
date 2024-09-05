@@ -148,7 +148,7 @@
                     <th>Nama Barang</th>
                     <th colspan="2">Harga</th>
                     <th colspan="2">Qty</th>
-                    <th colspan="2">Diskon</th>
+                    <th>Diskon</th>
                     <th colspan="2">Total</th>
                 </tr>
             </thead>
@@ -162,10 +162,9 @@
                     <td style="text-align: center;">{{ $item->qty }}</td>
                     <td>{{ $item->product->unit_type }}</td>
                     @if($item->discount)
-                    <td style="text-align: right;">{{ $item->discount }}</td>
-                    <td>%</td>
+                    <td style="text-align: right;">{{ $item->discount }} %</td>
                     @else
-                    <td colspan="2" style="text-align: center;">-</td>
+                    <td style="text-align: center;">-</td>
                     @endif
                     <td>Rp.</td>
                     <td style="text-align: right;">{{ number_format($item->total, 2, ',', '.') }}</td>
@@ -174,10 +173,10 @@
             </tbody>
             <tfoot>
                 <tr>
-                    <th colspan="10" style="background-color: #fff;"></th>
+                    <th colspan="9" style="background-color: #fff;"></th>
                 </tr>
                 <tr>
-                    <th colspan="4">TOTAL</th>
+                    <th colspan="3">TOTAL</th>
                     <th colspan="2">{{ $sale->total_items }}</th>
                     @if($item->discount)
                     <th>Rp.</th>
@@ -189,13 +188,13 @@
                     <th style="text-align: right;">{{ number_format($sale->subtotal, 2, ',', '.') }}</th>
                 </tr>
                 <tr>
-                    <th colspan="7" style="background-color: #fff;"></th>
+                    <th colspan="6" style="background-color: #fff;"></th>
                     <th style="text-align: left;">Harga Pengiriman</th>
                     <th>Rp.</th>
                     <th style="text-align: right;">{{ number_format($sale->shipping_price, 2, ',', '.') }}</th>
                 </tr>
                 <tr>
-                    <th colspan="7" style="background-color: #fff;"></th>
+                    <th colspan="6" style="background-color: #fff;"></th>
                     <th style="text-align: left;">Grandtotal</th>
                     <th>Rp.</th>
                     <th style="text-align: right;">{{ number_format($sale->grandtotal, 2, ',', '.') }}</th>

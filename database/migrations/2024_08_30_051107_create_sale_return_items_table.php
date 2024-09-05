@@ -18,7 +18,7 @@ return new class extends Migration
             $table->float('price');
             $table->integer('qty')->default(1);
             $table->float('discount')->default(0);
-            $table->float('subtotal');
+            $table->float('total');
             $table->timestamps();
         });
     }

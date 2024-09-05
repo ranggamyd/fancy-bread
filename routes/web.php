@@ -6,7 +6,8 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return view('welcome');
+    // return view('welcome');
+    return redirect('admin');
 });
 
 Route::get('admin/purchases/{purchase}/print', function (Purchase $purchase) {

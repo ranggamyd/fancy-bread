@@ -9,14 +9,9 @@ class SaleReturn extends Model
 {
     use HasFactory;
 
-    public function customer()
+    public function saleReturnInvoices()
     {
-        return $this->belongsTo(Customer::class);
-    }
-
-    public function sale()
-    {
-        return $this->belongsTo(Sale::class);
+        return $this->hasMany(SaleReturnInvoice::class);
     }
 
     public function saleReturnItems()

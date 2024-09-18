@@ -4,12 +4,15 @@ namespace App\Filament\Resources;
 
 use Carbon\Carbon;
 use App\Models\Sale;
+use App\Enums\Status;
 use App\Models\Product;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
 use App\Models\Customer;
 use Filament\Forms\Form;
 use Filament\Tables\Table;
+use App\Models\SalePayment;
+use App\Enums\PaymentStatus;
 use Filament\Resources\Resource;
 use Filament\Forms\Components\Grid;
 use Filament\Tables\Filters\Filter;
@@ -17,22 +20,24 @@ use Filament\Forms\Components\Group;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Textarea;
+use Filament\Tables\Actions\BulkAction;
 use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Illuminate\Database\Eloquent\Model;
 use Filament\Forms\Components\TextInput;
+use Filament\Tables\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Filters\SelectFilter;
 use Illuminate\Database\Eloquent\Builder;
 use App\Filament\Resources\VendorResource;
 use Filament\Forms\Components\Placeholder;
 use App\Filament\Resources\ProductResource;
-use Filament\Tables\Actions\BulkActionGroup;
+use Filament\Forms\Components\ToggleButtons;
+use Illuminate\Database\Eloquent\Collection;
 use Filament\Forms\Components\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
-use Filament\Forms\Components\MarkdownEditor;
-use Filament\Tables\Actions\DeleteBulkAction;
 use Filament\Tables\Grouping\Group as GroupFilter;
 use Filament\Tables\Actions\Action as CustomAction;
 use App\Filament\Resources\SaleResource\Pages\EditSale;
@@ -40,7 +45,7 @@ use App\Filament\Resources\SaleResource\Pages\ViewSale;
 use App\Filament\Resources\SaleResource\Pages\ListSales;
 use App\Filament\Resources\SaleResource\Pages\CreateSale;
 use App\Filament\Resources\CustomerResource\RelationManagers\SalesRelationManager;
-use Filament\Tables\Actions\ActionGroup;
+use App\Filament\Resources\SaleResource\RelationManagers\SalePaymentsRelationManager;
 
 class SaleResource extends Resource
 {
@@ -67,22 +72,20 @@ class SaleResource extends Resource
                             ->readOnly()
                             ->default(function () {
                                 $currentYear = Carbon::now()->year;
-                                $latestInvoice = Sale::whereYear('created_at', $currentYear)
-                                    ->latest()
-                                    ->first();
-                                if ($latestInvoice) {
-                                    $latestNumber = (int) substr($latestInvoice->invoice, -4);
-                                    $newNumber = $latestNumber + 1;
-                                } else {
-                                    $newNumber = 1;
-                                }
+                                $latestInvoice = Sale::whereYear('created_at', $currentYear)->latest()->first();
+                                $newNumber = $latestInvoice ? (int) substr($latestInvoice->invoice, -4) + 1 : 1;
+
                                 return 'FC/SC/' . $currentYear . '/' . str_pad($newNumber, 4, '0', STR_PAD_LEFT);
                             })
                             ->unique(ignoreRecord: true),
 
+                        TextInput::make('goods_receipt_number')
+                            ->label('No. LPB')
+                            ->hidden(fn(?Sale $record) => $record === null)
+                            ->unique(ignoreRecord: true),
+
                         DateTimePicker::make('date')
                             ->required()
-                            ->timezone('Asia/Jakarta')
                             ->default(now())
                             ->native(false)
                             ->suffixIcon('heroicon-o-calendar')
@@ -102,7 +105,14 @@ class SaleResource extends Resource
                         ->manageOptionForm(fn(Form $form) => VendorResource::form($form))
                         ->manageOptionActions(fn(Action $action) => $action->modalWidth('6xl')),
 
-                    MarkdownEditor::make('notes'),
+                    ToggleButtons::make('status')
+                        ->inline()
+                        ->options(Status::class)
+                        ->default('new')
+                        ->hidden(fn(?Sale $record) => $record === null)
+                        ->required(),
+
+                    Textarea::make('notes')->rows(1),
                 ]),
 
                 Section::make('Sale Items')->schema([
@@ -113,15 +123,14 @@ class SaleResource extends Resource
                             Select::make('product_id')
                                 ->required()
                                 ->relationship('product', 'name')
-                                ->reactive()
-                                ->disableOptionsWhenSelectedInSiblingRepeaterItems()
-                                // ->live()
-                                // ->afterStateUpdated(fn(Set $set) => $set('qty', 0))
-                                ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get))
                                 ->preload()
                                 ->searchable()
+                                ->disableOptionsWhenSelectedInSiblingRepeaterItems()
+                                ->reactive()
+                                ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get))
                                 ->createOptionForm(fn(Form $form) => ProductResource::form($form))
-                                ->createOptionAction(fn(Action $action) => $action->modalWidth('6xl')),
+                                ->createOptionAction(fn(Action $action) => $action->modalWidth('6xl'))
+                                ->columnSpan(2),
 
                             TextInput::make('price')
                                 ->readOnly()
@@ -135,9 +144,15 @@ class SaleResource extends Resource
                             TextInput::make('qty')
                                 ->required()
                                 ->numeric()
-                                ->default(1)
-                                ->maxValue(fn(Get $get) => Product::find($get('product_id'))?->stock ?? 0)
-                                ->live(onBlur: true)
+                                ->default(0)
+                                ->minValue(1)
+                                ->maxValue(function (?Sale $sale, Get $get, $state) {
+                                    $product = Product::find($get('product_id'));
+                                    return $sale === null ? $product->stock : $product->stock + $state;
+                                })
+                                ->validationAttribute('quantity')
+                                ->validationMessages(['max' => 'The :attribute field must not be greater than stock of product.'])
+                                ->live()
                                 ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
 
                             TextInput::make('discount')
@@ -150,14 +165,17 @@ class SaleResource extends Resource
                                 ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
 
                             TextInput::make('total')
-                                ->readOnly()
+                                ->disabled()
+                                ->dehydrated()
                                 ->required()
                                 ->numeric()
                                 ->prefix('Rp.')
                                 ->default(0),
                         ])
+                        ->default(Product::all()->map(fn($product) => ['product_id' => $product->id, 'price' => $product->post_tax_price])->toArray())
+                        ->collapsed()
                         ->reorderable()
-                        ->columns(5)
+                        ->columns(6)
                         ->live(onBlur: true)
                         ->afterStateUpdated(fn(Set $set, Get $get) => self::calcGrandTotal($set, $get))
                         ->deleteAction(fn(Action $action) => $action->after(fn(Set $set, Get $get) => self::calcGrandTotal($set, $get)))
@@ -165,7 +183,9 @@ class SaleResource extends Resource
                             $product = Product::find($state['product_id']);
                             if (!$product) return null;
 
-                            return "($product->code) $product->name - $product->stock product(s) available.";
+                            $stock = $product->stock;
+
+                            return "($product->code) $product->name - $stock product(s) available.";
                         })
                         ->extraItemActions([
                             Action::make('openProduct')
@@ -194,24 +214,28 @@ class SaleResource extends Resource
                             $product->save();
 
                             return $data;
-                            // problem: kalo hapus item repeater stoknya gimana?
+                            // problem: kalo hapus item repeater pas edit stoknya gimana?
                         }),
                 ]),
 
                 Section::make()->schema([
                     TextInput::make('total_items')
-                        ->readOnly()
+                        ->disabled()
+                        ->dehydrated()
                         ->required()
                         ->numeric()
-                        ->default(1)
+                        ->default(0)
+                        ->minValue(1)
                         ->inlineLabel(),
 
                     TextInput::make('subtotal')
-                        ->readOnly()
+                        ->disabled()
+                        ->dehydrated()
                         ->required()
                         ->numeric()
                         ->prefix('Rp.')
                         ->default(0)
+                        ->minValue(1)
                         ->inlineLabel(),
                 ])->columnStart(['lg' => 2]),
 
@@ -226,7 +250,8 @@ class SaleResource extends Resource
                         ->inlineLabel(),
 
                     TextInput::make('total_discount')
-                        ->readOnly()
+                        ->disabled()
+                        ->dehydrated()
                         ->required()
                         ->numeric()
                         ->prefix('Rp.')
@@ -234,12 +259,13 @@ class SaleResource extends Resource
                         ->inlineLabel(),
 
                     TextInput::make('grandtotal')
-                        ->readOnly()
+                        ->disabled()
+                        ->dehydrated()
                         ->required()
                         ->numeric()
                         ->prefix('Rp.')
                         ->default(0)
-                        ->rules(['min:0'])
+                        ->minValue(1)
                         ->inlineLabel(),
                 ])->columnStart(['lg' => 2]),
             ])->columns(3)->columnSpan(['lg' => fn(?Sale $record): ?string => $record ? 3 : 4]),
@@ -262,11 +288,16 @@ class SaleResource extends Resource
     {
         return $table
             ->columns([
+                TextColumn::make('status')
+                    ->alignCenter()
+                    ->badge(),
+
                 TextColumn::make('code')
                     ->alignCenter()
                     ->searchable()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->toggledHiddenByDefault(),
 
                 TextColumn::make('invoice')
                     ->alignCenter()
@@ -274,7 +305,20 @@ class SaleResource extends Resource
                     ->sortable()
                     ->toggleable(),
 
+                TextColumn::make('goods_receipt_number')
+                    ->label('No. LPB')
+                    ->alignCenter()
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
+
                 TextColumn::make('customer.name')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
+
+                TextColumn::make('customer.short_address')
+                    ->label('Address')
                     ->searchable()
                     ->sortable()
                     ->toggleable(),
@@ -296,6 +340,7 @@ class SaleResource extends Resource
                     ->toggledHiddenByDefault(),
 
                 TextColumn::make('total_items')
+                    ->label('Items')
                     ->alignCenter()
                     ->searchable()
                     ->sortable()
@@ -327,6 +372,27 @@ class SaleResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->toggleable(),
+
+                TextColumn::make('payment_status')
+                    ->alignCenter()
+                    ->badge(),
+
+                TextColumn::make('sale_payments_sum_total')
+                    ->label('Paid')
+                    ->money('IDR')
+                    ->sum('salePayments', 'total')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable()
+                    ->toggledHiddenByDefault(),
+
+                TextColumn::make('remaining_balance')
+                    ->label('Remaining')
+                    ->money('IDR')
+                    ->getStateUsing(fn($record) => $record->grandtotal - $record->salePayments->sum('total'))
+                    ->sortable()
+                    ->toggleable()
+                    ->toggledHiddenByDefault(),
 
                 TextColumn::make('date')
                     ->label('Sold at')
@@ -362,49 +428,149 @@ class SaleResource extends Resource
                     ->multiple()
                     ->preload()
                     ->searchable(),
-
-                SelectFilter::make('product')
-                    ->relationship('saleItems.product', 'name')
-                    ->multiple()
-                    ->preload()
-                    ->searchable(),
             ])
             ->actions([
+                CustomAction::make('setLPB')
+                    ->label('Delivered?')
+                    ->icon('heroicon-m-check-badge')
+                    ->color('success')
+                    ->hidden(fn(Sale $record) => $record->status !== Status::New)
+                    ->modalHeading('Goods Receipt')
+                    ->form([
+                        TextInput::make('goods_receipt_number')
+                            ->label('No. LPB')
+                            ->required()
+                            ->unique(ignoreRecord: true)
+                            ->helperText('fill in this field would update the sale status to delivered.'),
+                    ])
+                    ->action(function ($record, $data) {
+                        $record->goods_receipt_number = $data['goods_receipt_number'];
+                        $record->status = Status::Delivered;
+                        $record->save();
+                    }),
+                CustomAction::make('pay')
+                    ->hidden(fn(Sale $record) => $record->payment_status === PaymentStatus::Paid)
+                    ->icon('heroicon-o-banknotes')
+                    ->color('info')
+                    ->modalHeading('Add new payment')
+                    ->form([
+                        Grid::make()->schema([
+                            ToggleButtons::make('method')
+                                ->required()
+                                ->options([
+                                    'bank_transfer' => 'Bank transfer',
+                                    'cash_on_delivery' => 'Cash on delivery',
+                                    'credit_card' => 'Credit card',
+                                ])
+                                ->inline()
+                                ->live(),
+
+                            DateTimePicker::make('date')
+                                ->required()
+                                ->default(now())
+                                ->native(false)
+                                ->suffixIcon('heroicon-o-calendar')
+                                ->closeOnDateSelection(),
+                        ]),
+
+                        Grid::make()->schema([
+                            ToggleButtons::make('provider')
+                                ->required()
+                                ->inline()
+                                ->grouped()
+                                ->options([
+                                    'bri' => 'BRI',
+                                    'bca' => 'BCA',
+                                    'mandiri' => 'Mandiri',
+                                    'uob' => 'UOB',
+                                ]),
+
+                            TextInput::make('reference')->required(),
+                        ])->hidden((fn(Get $get) => $get('method') === 'cash_on_delivery')),
+
+                        TextInput::make('amount')
+                            ->required()
+                            ->numeric()
+                            ->prefix('Rp.')
+                            ->default(fn($record) => $record->grandtotal - $record->salePayments->sum('total'))
+                            ->minValue(1)
+                            ->columnSpan('full')
+                            ->live(onBlur: true)
+                            ->afterStateUpdated(fn(Get $get, Set $set) => $set('total', ($get('amount') ?: 0) + ($get('fee') ?: 0))),
+
+                        Grid::make()->schema([
+                            TextInput::make('fee')
+                                ->numeric()
+                                ->prefix('Rp.')
+                                ->default(0)
+                                ->live(onBlur: true)
+                                ->afterStateUpdated(fn(Get $get, Set $set) => $set('total', ($get('amount') ?: 0) + ($get('fee') ?: 0))),
+
+                            TextInput::make('total')
+                                ->required()
+                                ->readOnly()
+                                ->numeric()
+                                ->prefix('Rp.')
+                                ->default(fn($record) => $record->grandtotal - $record->salePayments->sum('total')),
+                        ])
+                    ])
+                    ->action(function ($record, $data) {
+                        $data['sale_id'] = $record->id;
+                        $salePayment = SalePayment::create($data);
+                        $salePayment->save();
+
+                        if ($record->salePayments->sum('total') >= $record->grandtotal) {
+                            $record->payment_status = PaymentStatus::Paid;
+                        } elseif ($record->salePayments->sum('total') == 0) {
+                            $record->payment_status = PaymentStatus::Unpaid;
+                        } else {
+                            $record->payment_status = PaymentStatus::Uncomplete;
+                        }
+
+                        $record->save();
+                    }),
+                CustomAction::make('print_invoice')
+                    ->label('Invoice')
+                    ->icon('heroicon-o-printer')
+                    ->url(fn(Sale $record): string => route('sales.invoice.print', $record))
+                    ->openUrlInNewTab()
+                    ->color('primary'),
                 ActionGroup::make([
                     ViewAction::make(),
                     EditAction::make()->color('info'),
-                    CustomAction::make('print_invoice')
-                        ->label('Invoice')
-                        ->icon('heroicon-o-printer')
-                        ->url(fn(Sale $record): string => route('sales.invoice.print', $record))
-                        ->openUrlInNewTab()
-                        ->color('primary'),
-                    CustomAction::make('return')
-                        ->label('Return')
-                        ->icon('heroicon-o-arrow-uturn-left')
-                        ->url(fn(Sale $record): string => SaleReturnResource::getUrl('create', ['sale_id' => $record->id]))
-                        ->openUrlInNewTab()
-                        ->hidden(fn(Sale $record) => $record->saleReturns->count() > 0)
-                        ->color('danger'),
                 ])
             ])
-            ->bulkActions([BulkActionGroup::make([DeleteBulkAction::make()])])
+            ->bulkActions([
+                BulkAction::make('return')
+                    ->label('Return selected sales')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->action(function (Collection $records) {
+                        $saleIds = $records->pluck('id')->toArray();
+                        $url = SaleReturnResource::getUrl('create', ['sales' => implode(',', $saleIds)]);
+
+                        return redirect($url);
+                    })
+                    ->color('danger'),
+                // BulkActionGroup::make([DeleteBulkAction::make()])
+            ])
+            // ->checkIfRecordIsSelectableUsing(
+            //     fn (Model $record): bool => $record->status === Status::Enabled,
+            // )
+            ->selectCurrentPageOnly()
             ->groups([
                 GroupFilter::make('date')
                     ->label('Sold at')
                     ->date()
                     ->collapsible(),
-                GroupFilter::make('customer.name')
-                    ->collapsible(),
+
+                GroupFilter::make('customer.name')->collapsible(),
             ])
             ->defaultGroup('date');
     }
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [SalePaymentsRelationManager::class];
     }
 
     public static function getPages(): array

@@ -85,7 +85,6 @@ class PurchaseReturnResource extends Resource
 
                         DateTimePicker::make('date')
                             ->required()
-                            ->timezone('Asia/Jakarta')
                             ->default(now())
                             ->native(false)
                             ->suffixIcon('heroicon-o-calendar')
@@ -131,7 +130,7 @@ class PurchaseReturnResource extends Resource
                                 ->required()
                                 ->numeric()
                                 ->default(1)
-                                ->live(onBlur: true)
+                                ->live()
                                 ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
 
                             TextInput::make('discount')

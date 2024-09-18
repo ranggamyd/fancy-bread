@@ -17,6 +17,7 @@ use Filament\Forms\Components\Group;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Textarea;
 use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
@@ -32,7 +33,6 @@ use App\Filament\Resources\ProductResource;
 use Filament\Tables\Actions\BulkActionGroup;
 use Filament\Forms\Components\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
-use Filament\Forms\Components\MarkdownEditor;
 use Filament\Tables\Actions\DeleteBulkAction;
 use Filament\Tables\Grouping\Group as GroupFilter;
 use Filament\Tables\Actions\Action as CustomAction;
@@ -67,22 +67,15 @@ class PurchaseResource extends Resource
                             ->readOnly()
                             ->default(function () {
                                 $currentYear = Carbon::now()->year;
-                                $latestInvoice = Purchase::whereYear('created_at', $currentYear)
-                                    ->latest()
-                                    ->first();
-                                if ($latestInvoice) {
-                                    $latestNumber = (int) substr($latestInvoice->invoice, -4);
-                                    $newNumber = $latestNumber + 1;
-                                } else {
-                                    $newNumber = 1;
-                                }
+                                $latestInvoice = Purchase::whereYear('created_at', $currentYear)->latest()->first();
+                                $newNumber = $latestInvoice ? (int) substr($latestInvoice->invoice, -4) + 1 : 1;
+
                                 return 'FC/PC/' . $currentYear . '/' . str_pad($newNumber, 4, '0', STR_PAD_LEFT);
                             })
                             ->unique(ignoreRecord: true),
 
                         DateTimePicker::make('date')
                             ->required()
-                            ->timezone('Asia/Jakarta')
                             ->default(now())
                             ->native(false)
                             ->suffixIcon('heroicon-o-calendar')
@@ -102,7 +95,8 @@ class PurchaseResource extends Resource
                         ->manageOptionForm(fn(Form $form) => VendorResource::form($form))
                         ->manageOptionActions(fn(Action $action) => $action->modalWidth('6xl')),
 
-                    MarkdownEditor::make('notes'),
+                    Textarea::make('notes')
+                        ->rows(1),
                 ]),
 
                 Section::make('Purchase Items')->schema([
@@ -113,26 +107,28 @@ class PurchaseResource extends Resource
                             Select::make('product_id')
                                 ->required()
                                 ->relationship('product', 'name')
-                                ->reactive()
-                                ->disableOptionsWhenSelectedInSiblingRepeaterItems()
                                 ->preload()
                                 ->searchable()
+                                ->disableOptionsWhenSelectedInSiblingRepeaterItems()
                                 ->createOptionForm(fn(Form $form) => ProductResource::form($form))
-                                ->createOptionAction(fn(Action $action) => $action->modalWidth('6xl')),
+                                ->createOptionAction(fn(Action $action) => $action->modalWidth('6xl'))
+                                ->columnSpan(2),
 
                             TextInput::make('price')
                                 ->required()
                                 ->numeric()
                                 ->prefix('Rp.')
                                 ->default(0)
+                                ->minValue(1)
                                 ->live(onBlur: true)
                                 ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
 
                             TextInput::make('qty')
                                 ->required()
                                 ->numeric()
-                                ->default(1)
-                                ->live(onBlur: true)
+                                ->default(0)
+                                ->minValue(1)
+                                ->live()
                                 ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
 
                             TextInput::make('discount')
@@ -151,8 +147,10 @@ class PurchaseResource extends Resource
                                 ->prefix('Rp.')
                                 ->default(0),
                         ])
+                        ->default(Product::all()->map(fn($product) => ['product_id' => $product->id])->toArray())
+                        ->collapsed()
                         ->reorderable()
-                        ->columns(5)
+                        ->columns(6)
                         ->live(onBlur: true)
                         ->afterStateUpdated(fn(Set $set, Get $get) => self::calcGrandTotal($set, $get))
                         ->itemLabel(function (array $state): ?string {
@@ -188,7 +186,7 @@ class PurchaseResource extends Resource
                             $product->save();
 
                             return $data;
-                            // problem: kalo hapus item repeater stoknya gimana?
+                            // problem: kalo hapus item repeater pas edit stoknya gimana?
                         }),
                 ]),
 
@@ -197,7 +195,8 @@ class PurchaseResource extends Resource
                         ->readOnly()
                         ->required()
                         ->numeric()
-                        ->default(1)
+                        ->default(0)
+                        ->minValue(1)
                         ->inlineLabel(),
 
                     TextInput::make('subtotal')
@@ -206,6 +205,7 @@ class PurchaseResource extends Resource
                         ->numeric()
                         ->prefix('Rp.')
                         ->default(0)
+                        ->minValue(1)
                         ->inlineLabel(),
                 ])->columnStart(['lg' => 2]),
 
@@ -233,7 +233,7 @@ class PurchaseResource extends Resource
                         ->numeric()
                         ->prefix('Rp.')
                         ->default(0)
-                        ->rules(['min:0'])
+                        ->minValue(1)
                         ->inlineLabel(),
                 ])->columnStart(['lg' => 2]),
             ])->columns(3)->columnSpan(['lg' => fn(?Purchase $record): ?string => $record ? 3 : 4]),
@@ -260,7 +260,8 @@ class PurchaseResource extends Resource
                     ->alignCenter()
                     ->searchable()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->toggledHiddenByDefault(),
 
                 TextColumn::make('invoice')
                     ->alignCenter()
@@ -269,6 +270,12 @@ class PurchaseResource extends Resource
                     ->toggleable(),
 
                 TextColumn::make('vendor.name')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
+
+                TextColumn::make('vendor.short_address')
+                    ->label('Address')
                     ->searchable()
                     ->sortable()
                     ->toggleable(),
@@ -336,8 +343,14 @@ class PurchaseResource extends Resource
             ->filters([
                 Filter::make('date')
                     ->form([
-                        DatePicker::make('purchased_from'),
-                        DatePicker::make('purchased_until'),
+                        Grid::make('date')->schema([
+                            DatePicker::make('purchased_from')
+                                ->label('From'),
+
+                            DatePicker::make('purchased_until')
+                                ->label('Until')
+                                ->default(now()),
+                        ])->columns(2)
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
@@ -356,25 +369,20 @@ class PurchaseResource extends Resource
                     ->multiple()
                     ->preload()
                     ->searchable(),
-
-                SelectFilter::make('product')
-                    ->relationship('purchaseItems.product', 'name')
-                    ->multiple()
-                    ->preload()
-                    ->searchable(),
             ])
             ->actions([
+                CustomAction::make('print_invoice')
+                    ->label('Invoice')
+                    ->icon('heroicon-o-printer')
+                    ->url(fn(Purchase $record): string => route('purchases.invoice.print', $record))
+                    ->openUrlInNewTab()
+                    ->color('primary'),
+
                 ActionGroup::make([
                     ViewAction::make(),
                     EditAction::make()->color('info'),
-                    CustomAction::make('print_invoice')
-                        ->label('Invoice')
-                        ->icon('heroicon-o-printer')
-                        ->url(fn(Purchase $record): string => route('purchases.invoice.print', $record))
-                        ->openUrlInNewTab()
-                        ->color('primary'),
                     CustomAction::make('return')
-                        ->label('Return')
+                        ->label('Return this purchase')
                         ->icon('heroicon-o-arrow-uturn-left')
                         ->url(fn(Purchase $record): string => PurchaseReturnResource::getUrl('create', ['purchase_id' => $record->id]))
                         ->openUrlInNewTab()
@@ -388,6 +396,7 @@ class PurchaseResource extends Resource
                     ->label('Purchased at')
                     ->date()
                     ->collapsible(),
+
                 GroupFilter::make('vendor.name')
                     ->collapsible(),
             ])
@@ -396,9 +405,7 @@ class PurchaseResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 
     public static function getPages(): array

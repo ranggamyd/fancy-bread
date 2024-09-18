@@ -39,6 +39,7 @@ use App\Filament\Resources\SaleReturnResource\Pages\EditSaleReturn;
 use App\Filament\Resources\SaleReturnResource\Pages\ViewSaleReturn;
 use App\Filament\Resources\SaleReturnResource\Pages\ListSaleReturns;
 use App\Filament\Resources\SaleReturnResource\Pages\CreateSaleReturn;
+use Filament\Forms\Components\Textarea;
 
 class SaleReturnResource extends Resource
 {
@@ -52,14 +53,8 @@ class SaleReturnResource extends Resource
     {
         return $form->schema([
             Group::make()->schema([
-                Section::make('SaleReturn Information')->schema([
+                Section::make('Sale Return Information')->schema([
                     Grid::make()->schema([
-                        Select::make('sale_id')
-                            ->disabled()
-                            ->required()
-                            ->relationship('sale', 'code')
-                            ->default(request('sale_id')),
-
                         TextInput::make('code')
                             ->required()
                             ->readOnly()
@@ -86,7 +81,6 @@ class SaleReturnResource extends Resource
 
                         DateTimePicker::make('date')
                             ->required()
-                            ->timezone('Asia/Jakarta')
                             ->default(now())
                             ->native(false)
                             ->suffixIcon('heroicon-o-calendar')
@@ -94,15 +88,75 @@ class SaleReturnResource extends Resource
                             ->columnStart(['lg' => 4]),
                     ])->columns(['lg' => 4]),
 
-                    Select::make('customer_id')
-                        ->disabled()
-                        ->required()
-                        ->relationship('customer', modifyQueryUsing: fn(Builder $query) => $query->orderBy('code')->orderBy('name'))
-                        ->getOptionLabelFromRecordUsing(fn(Model $record) => "({$record->code}) {$record->name} - {$record->short_address}")
-                        ->default($customer ? $customer?->id : Sale::find(request('sale_id'))?->customer_id),
-
-                    MarkdownEditor::make('notes'),
+                    Textarea::make('notes')->rows(1),
                 ]),
+
+                Section::make('Sale Return Invoices')->schema([
+                    Repeater::make('saleReturnInvoices')
+                        ->required()
+                        ->relationship()
+                        ->hiddenLabel()->schema([
+                            Select::make('sale_id')
+                                ->label('Invoice')
+                                ->required()
+                                ->relationship('sale', 'invoice')
+                                ->disabled()
+                                ->dehydrated(),
+
+                            TextInput::make('goods_receipt_number')
+                                ->label('No. LPB')
+                                ->required()
+                                ->disabled(),
+
+                            Select::make('customer_id')
+                                ->label('Customer')
+                                ->required()
+                                ->relationship('sale.customer', modifyQueryUsing: fn(Builder $query) => $query->orderBy('code')->orderBy('name'))
+                                ->getOptionLabelFromRecordUsing(fn(Model $record) => "({$record->code}) {$record->name} - {$record->short_address}")
+                                ->disabled(),
+
+                            TextInput::make('grandtotal')
+                                ->required()
+                                ->numeric()
+                                ->prefix('Rp.')
+                                ->disabled(),
+
+                            DateTimePicker::make('date')
+                                ->required()
+                                ->suffixIcon('heroicon-o-calendar')
+                                ->disabled(),
+                        ])
+                        ->columns(5)
+                        ->addable(false)
+                        ->reorderable(false)
+                        ->deletable(false)
+                        ->default(function () {
+                            $saleReturnInvoices = [];
+                            foreach (explode(',', request('sales')) as $saleId) {
+                                $sale = Sale::find($saleId);
+
+                                $saleReturnInvoices[] = [
+                                    'sale_id' => $sale->id,
+                                    'goods_receipt_number' => $sale->goods_receipt_number,
+                                    'customer_id' => $sale->customer_id,
+                                    'grandtotal' => $sale->grandtotal,
+                                    'date' => $sale->date,
+                                ];
+                            };
+
+                            return $saleReturnInvoices;
+                        })
+                        ->mutateRelationshipDataBeforeFillUsing(function (array $data): array {
+                            $sale = Sale::find($data['sale_id']);
+
+                            $data['goods_receipt_number'] = $sale->goods_receipt_number;
+                            $data['customer_id'] = $sale->customer_id;
+                            $data['grandtotal'] = $sale->grandtotal;
+                            $data['date'] = $sale->date;
+
+                            return $data;
+                        }),
+                ])->collapsed(),
 
                 Section::make('Sale Return Items')->schema([
                     Repeater::make('saleReturnItems')
@@ -112,13 +166,11 @@ class SaleReturnResource extends Resource
                             Select::make('product_id')
                                 ->required()
                                 ->relationship('product', 'name')
-                                ->reactive()
-                                ->disableOptionsWhenSelectedInSiblingRepeaterItems()
-                                ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get))
                                 ->preload()
                                 ->searchable()
-                                ->createOptionForm(fn(Form $form) => ProductResource::form($form))
-                                ->createOptionAction(fn(Action $action) => $action->modalWidth('6xl')),
+                                ->disableOptionsWhenSelectedInSiblingRepeaterItems()
+                                ->reactive()
+                                ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
 
                             TextInput::make('price')
                                 ->readOnly()
@@ -132,51 +184,31 @@ class SaleReturnResource extends Resource
                             TextInput::make('qty')
                                 ->required()
                                 ->numeric()
-                                ->default(1)
-                                // ->maxValue(fn(Get $get) => Product::find($get('product_id'))?->stock ?? 0)
-                                ->live(onBlur: true)
-                                ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
-
-                            TextInput::make('discount')
-                                ->required()
-                                ->numeric()
-                                ->suffix('%')
                                 ->default(0)
-                                ->rules(['min:0', 'max:100'])
-                                ->live(onBlur: true)
+                                ->minValue(1)
+                                ->live()
                                 ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
 
                             TextInput::make('total')
-                                ->readOnly()
+                                ->disabled()
+                                ->dehydrated()
                                 ->required()
                                 ->numeric()
                                 ->prefix('Rp.')
                                 ->default(0),
                         ])
-                        ->default(function () {
-                            $saleItems = Sale::find(request('sale_id'))->saleItems;
-
-                            $saleReturnItems = [];
-                            foreach ($saleItems as $item) {
-                                $saleReturnItems[] = [
-                                    'product_id' => $item->product_id,
-                                    'price' => $item->price,
-                                    'qty' => $item->qty,
-                                    'discount' => $item->discount,
-                                ];
-                            };
-
-                            return $saleReturnItems;
-                        })
+                        ->columns(4)
                         ->reorderable()
-                        ->columns(5)
                         ->live(onBlur: true)
                         ->afterStateUpdated(fn(Set $set, Get $get) => self::calcGrandTotal($set, $get))
+                        ->deleteAction(fn(Action $action) => $action->after(fn(Set $set, Get $get) => self::calcGrandTotal($set, $get)))
                         ->itemLabel(function (array $state): ?string {
                             $product = Product::find($state['product_id']);
                             if (!$product) return null;
 
-                            return "($product->code) $product->name - $product->stock product(s) available.";
+                            $stock = $product->stock;
+
+                            return "($product->code) $product->name - $stock product(s) available.";
                         })
                         ->extraItemActions([
                             Action::make('openProduct')
@@ -191,38 +223,27 @@ class SaleReturnResource extends Resource
                                     return ProductResource::getUrl('edit', ['record' => $product]);
                                 }, shouldOpenInNewTab: true)
                                 ->hidden(fn(array $arguments, Repeater $component): bool => blank($component->getRawItemState($arguments['item'])['product_id'])),
-                        ]),
-                    // ->mutateRelationshipDataBeforeCreateUsing(function ($data) {
-                    //     $product = Product::find($data['product_id']);
-                    //     $product->stock = $product->stock - $data['qty'];
-                    //     $product->save();
-
-                    //     return $data;
-                    // })
-                    // ->mutateRelationshipDataBeforeSaveUsing(function ($data, $record) {
-                    //     $product = Product::find($data['product_id']);
-                    //     $product->stock = $product->stock + $record->qty - $data['qty'];
-                    //     $product->save();
-
-                    //     return $data;
-                    //     // problem: kalo hapus item repeater stoknya gimana?
-                    // }),
+                        ])
                 ]),
 
                 Section::make()->schema([
                     TextInput::make('total_items')
-                        ->readOnly()
+                        ->disabled()
+                        ->dehydrated()
                         ->required()
                         ->numeric()
-                        ->default(1)
+                        ->default(0)
+                        ->minValue(1)
                         ->inlineLabel(),
 
                     TextInput::make('subtotal')
-                        ->readOnly()
+                        ->disabled()
+                        ->dehydrated()
                         ->required()
                         ->numeric()
                         ->prefix('Rp.')
                         ->default(0)
+                        ->minValue(1)
                         ->inlineLabel(),
                 ])->columnStart(['lg' => 2]),
 
@@ -236,21 +257,14 @@ class SaleReturnResource extends Resource
                         ->afterStateUpdated(fn(Set $set, Get $get) => self::calcGrandTotal($set, $get))
                         ->inlineLabel(),
 
-                    TextInput::make('total_discount')
-                        ->readOnly()
-                        ->required()
-                        ->numeric()
-                        ->prefix('Rp.')
-                        ->default(0)
-                        ->inlineLabel(),
-
                     TextInput::make('grandtotal')
-                        ->readOnly()
+                        ->disabled()
+                        ->dehydrated()
                         ->required()
                         ->numeric()
                         ->prefix('Rp.')
                         ->default(0)
-                        ->rules(['min:0'])
+                        ->minValue(1)
                         ->inlineLabel(),
                 ])->columnStart(['lg' => 2]),
             ])->columns(3)->columnSpan(['lg' => fn(?SaleReturn $record): ?string => $record ? 3 : 4]),
@@ -279,22 +293,18 @@ class SaleReturnResource extends Resource
                     ->sortable()
                     ->toggleable(),
 
-                TextColumn::make('sale.code')
-                    ->alignCenter()
-                    ->searchable()
-                    ->sortable()
-                    ->toggleable(),
-
                 TextColumn::make('invoice')
                     ->alignCenter()
                     ->searchable()
                     ->sortable()
                     ->toggleable(),
 
-                TextColumn::make('customer.name')
+                TextColumn::make('saleReturnInvoices.sale.customer.name')
+                    ->distinctList()
                     ->searchable()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->toggledHiddenByDefault(),
 
                 TextColumn::make('notes')
                     ->limit(10)
@@ -375,7 +385,7 @@ class SaleReturnResource extends Resource
                     }),
 
                 SelectFilter::make('customer')
-                    ->relationship('customer', 'name')
+                    ->relationship('saleReturnInvoices.sale.customer', 'name')
                     ->multiple()
                     ->preload()
                     ->searchable(),
@@ -396,17 +406,15 @@ class SaleReturnResource extends Resource
                     ->label('Returned at')
                     ->date()
                     ->collapsible(),
-                GroupFilter::make('customer.name')
-                    ->collapsible(),
+
+                // GroupFilter::make('customer.name')->collapsible(),
             ])
             ->defaultGroup('date');
     }
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 
     public static function getPages(): array
@@ -423,7 +431,7 @@ class SaleReturnResource extends Resource
     {
         $product = Product::find($get('product_id'));
         $set('price', $product?->post_tax_price);
-        $set('total', ($get('price') ?: 0) * ($get('qty') ?: 0) * (1 - ($get('discount') ?: 0) / 100));
+        $set('total', ($get('price') ?: 0) * ($get('qty') ?: 0));
     }
 
     static function calcGrandTotal(Set $set, Get $get)
@@ -431,10 +439,7 @@ class SaleReturnResource extends Resource
         $totalItems = collect($get('saleReturnItems'))->reduce(fn($totalItems, $item) => $totalItems + ($item['qty'] ?: 0), 0);
         $set('total_items', $totalItems);
 
-        $totalDiscount = collect($get('saleReturnItems'))->reduce(fn($totalDiscount, $item) => $totalDiscount + ($item['price'] ?: 0) * ($item['qty'] ?: 0) * ($item['discount'] ?: 0) / 100, 0);
-        $set('total_discount', $totalDiscount);
-
-        $subTotal = collect($get('saleReturnItems'))->reduce(fn($subTotal, $item) => $subTotal + ($item['price'] ?: 0) * ($item['qty'] ?: 0) * (1 - ($item['discount'] ?: 0) / 100), 0);
+        $subTotal = collect($get('saleReturnItems'))->reduce(fn($subTotal, $item) => $subTotal + ($item['price'] ?: 0) * ($item['qty'] ?: 0), 0);
         $set('subtotal', $subTotal);
 
         $set('grandtotal', $subTotal + ($get('shipping_price') ?: 0));

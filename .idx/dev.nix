@@ -14,12 +14,12 @@
     # "svelte.svelte-vscode"
     # "vue.volar"
   ];
-  idx.previews = {
-    previews = {
-      web = {
-        command = [ "php" "artisan" "serve" "--port" "$PORT" "--host" "0.0.0.0" ];
-        manager = "web";
-      };
-    };
-  };
+  # idx.previews = {
+  #   previews = {
+  #     web = {
+  #       command = [ "php" "artisan" "serve" "--port" "$PORT" "--host" "0.0.0.0" ];
+  #       manager = "web";
+  #     };
+  #   };
+  # };
 }

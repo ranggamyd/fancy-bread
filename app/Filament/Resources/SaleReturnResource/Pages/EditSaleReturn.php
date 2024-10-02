@@ -2,10 +2,9 @@
 
 namespace App\Filament\Resources\SaleReturnResource\Pages;
 
-use App\Filament\Resources\SaleReturnResource;
-use App\Models\SaleReturn;
-use Filament\Actions;
+use Filament\Actions\ViewAction;
 use Filament\Resources\Pages\EditRecord;
+use App\Filament\Resources\SaleReturnResource;
 
 class EditSaleReturn extends EditRecord
 {
@@ -18,6 +17,6 @@ class EditSaleReturn extends EditRecord
 
     protected function getHeaderActions(): array
     {
-        return [Actions\ViewAction::make()];
+        return [ViewAction::make()];
     }
 }

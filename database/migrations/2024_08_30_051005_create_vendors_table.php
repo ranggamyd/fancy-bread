@@ -18,6 +18,7 @@ return new class extends Migration
             $table->text('short_address')->nullable();
             $table->text('full_address')->nullable();
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

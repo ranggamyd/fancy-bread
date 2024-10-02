@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\VendorResource\Pages;
 
-use App\Filament\Resources\VendorResource;
-use Filament\Actions;
+use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
+use App\Filament\Resources\VendorResource;
 
 class EditVendor extends EditRecord
 {
@@ -12,8 +12,6 @@ class EditVendor extends EditRecord
 
     protected function getHeaderActions(): array
     {
-        return [
-            Actions\DeleteAction::make(),
-        ];
+        return [DeleteAction::make()];
     }
 }

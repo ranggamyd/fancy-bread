@@ -4,11 +4,11 @@ namespace App\Filament\Resources\SaleResource\Pages;
 
 use App\Models\Sale;
 use App\Enums\Status;
-use Filament\Actions;
+use Filament\Actions\Action;
+use Filament\Actions\EditAction;
 use App\Filament\Resources\SaleResource;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Pages\ViewRecord;
-use App\Filament\Resources\SaleReturnResource;
 
 class ViewSale extends ViewRecord
 {
@@ -17,7 +17,7 @@ class ViewSale extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\Action::make('setLPB')
+            Action::make('setLPB')
                 ->label('Delivered?')
                 ->icon('heroicon-m-check-badge')
                 ->color('success')
@@ -27,6 +27,7 @@ class ViewSale extends ViewRecord
                     TextInput::make('goods_receipt_number')
                         ->label('No. LPB')
                         ->required()
+                        ->default('LPB/' . strtotime(now()))
                         ->unique(ignoreRecord: true)
                         ->helperText('fill in this field would update the sale status to delivered.'),
                 ])
@@ -35,20 +36,15 @@ class ViewSale extends ViewRecord
                     $record->status = Status::Delivered;
                     $record->save();
                 }),
-            Actions\Action::make('print_invoice')
+
+            Action::make('print_invoice')
                 ->label('Invoice')
                 ->icon('heroicon-o-printer')
                 ->url(fn(Sale $record): string => route('sales.invoice.print', $record))
                 ->openUrlInNewTab()
                 ->color('primary'),
-            Actions\Action::make('return')
-                ->label('Return this sale')
-                ->icon('heroicon-o-arrow-uturn-left')
-                ->url(fn(Sale $record): string => SaleReturnResource::getUrl('create', ['sale_id' => $record->id]))
-                ->openUrlInNewTab()
-                ->hidden(fn(Sale $record) => $record->saleReturnInvoices->count() > 0)
-                ->color('danger'),
-            Actions\EditAction::make(),
+
+            EditAction::make(),
         ];
     }
 }

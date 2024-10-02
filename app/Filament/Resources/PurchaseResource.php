@@ -13,6 +13,7 @@ use Filament\Tables\Table;
 use Filament\Resources\Resource;
 use Filament\Forms\Components\Grid;
 use Filament\Tables\Filters\Filter;
+use App\Filament\Clusters\Purchases;
 use Filament\Forms\Components\Group;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Section;
@@ -25,28 +26,38 @@ use Illuminate\Database\Eloquent\Model;
 use Filament\Forms\Components\TextInput;
 use Filament\Tables\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;
+use Filament\Tables\Actions\DeleteAction;
 use Filament\Tables\Filters\SelectFilter;
 use Illuminate\Database\Eloquent\Builder;
+use App\Filament\Exports\PurchaseExporter;
 use App\Filament\Resources\VendorResource;
 use Filament\Forms\Components\Placeholder;
+use Filament\Tables\Actions\RestoreAction;
+use Filament\Tables\Filters\TrashedFilter;
 use App\Filament\Resources\ProductResource;
 use Filament\Tables\Actions\BulkActionGroup;
 use Filament\Forms\Components\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Tables\Actions\DeleteBulkAction;
+use Filament\Tables\Actions\ExportBulkAction;
+use Filament\Tables\Actions\ForceDeleteAction;
 use Filament\Tables\Grouping\Group as GroupFilter;
 use Filament\Tables\Actions\Action as CustomAction;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\PurchaseResource\Pages\EditPurchase;
 use App\Filament\Resources\PurchaseResource\Pages\ViewPurchase;
 use App\Filament\Resources\PurchaseResource\Pages\ListPurchases;
 use App\Filament\Resources\PurchaseResource\Pages\CreatePurchase;
+use App\Filament\Resources\PurchaseResource\Widgets\PurchaseStats;
 use App\Filament\Resources\VendorResource\RelationManagers\PurchasesRelationManager;
 
 class PurchaseResource extends Resource
 {
     protected static ?string $model = Purchase::class;
 
-    protected static ?string $navigationGroup = 'Transaction';
+    protected static ?string $recordTitleAttribute = 'invoice';
+
+    protected static ?string $navigationGroup = 'Purchases';
 
     protected static ?string $navigationIcon = 'heroicon-o-shopping-bag';
 
@@ -58,13 +69,15 @@ class PurchaseResource extends Resource
                     Grid::make()->schema([
                         TextInput::make('code')
                             ->required()
-                            ->readOnly()
+                            ->disabled()
+                            ->dehydrated()
                             ->default('TP-C-' . strtotime(now()))
                             ->unique(ignoreRecord: true),
 
                         TextInput::make('invoice')
                             ->required()
-                            ->readOnly()
+                            ->disabled()
+                            ->dehydrated()
                             ->default(function () {
                                 $currentYear = Carbon::now()->year;
                                 $latestInvoice = Purchase::whereYear('created_at', $currentYear)->latest()->first();
@@ -99,112 +112,25 @@ class PurchaseResource extends Resource
                         ->rows(1),
                 ]),
 
-                Section::make('Purchase Items')->schema([
-                    Repeater::make('purchaseItems')
-                        ->required()
-                        ->relationship()
-                        ->hiddenLabel()->schema([
-                            Select::make('product_id')
-                                ->required()
-                                ->relationship('product', 'name')
-                                ->preload()
-                                ->searchable()
-                                ->disableOptionsWhenSelectedInSiblingRepeaterItems()
-                                ->createOptionForm(fn(Form $form) => ProductResource::form($form))
-                                ->createOptionAction(fn(Action $action) => $action->modalWidth('6xl'))
-                                ->columnSpan(2),
-
-                            TextInput::make('price')
-                                ->required()
-                                ->numeric()
-                                ->prefix('Rp.')
-                                ->default(0)
-                                ->minValue(1)
-                                ->live(onBlur: true)
-                                ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
-
-                            TextInput::make('qty')
-                                ->required()
-                                ->numeric()
-                                ->default(0)
-                                ->minValue(1)
-                                ->live()
-                                ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
-
-                            TextInput::make('discount')
-                                ->required()
-                                ->numeric()
-                                ->suffix('%')
-                                ->default(0)
-                                ->rules(['min:0', 'max:100'])
-                                ->live(onBlur: true)
-                                ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
-
-                            TextInput::make('total')
-                                ->readOnly()
-                                ->required()
-                                ->numeric()
-                                ->prefix('Rp.')
-                                ->default(0),
-                        ])
-                        ->default(Product::all()->map(fn($product) => ['product_id' => $product->id])->toArray())
-                        ->collapsed()
-                        ->reorderable()
-                        ->columns(6)
-                        ->live(onBlur: true)
-                        ->afterStateUpdated(fn(Set $set, Get $get) => self::calcGrandTotal($set, $get))
-                        ->itemLabel(function (array $state): ?string {
-                            $product = Product::find($state['product_id']);
-                            if (!$product) return null;
-
-                            return "($product->code) $product->name - $product->stock product(s) left.";
-                        })
-                        ->extraItemActions([
-                            Action::make('openProduct')
-                                ->tooltip('Open product')
-                                ->icon('heroicon-m-arrow-top-right-on-square')
-                                ->url(function (array $arguments, Repeater $component): ?string {
-                                    $itemData = $component->getRawItemState($arguments['item']);
-
-                                    $product = Product::find($itemData['product_id']);
-                                    if (!$product) return null;
-
-                                    return ProductResource::getUrl('edit', ['record' => $product]);
-                                }, shouldOpenInNewTab: true)
-                                ->hidden(fn(array $arguments, Repeater $component): bool => blank($component->getRawItemState($arguments['item'])['product_id'])),
-                        ])
-                        ->mutateRelationshipDataBeforeCreateUsing(function ($data) {
-                            $product = Product::find($data['product_id']);
-                            $product->stock = $product->stock + $data['qty'];
-                            $product->save();
-
-                            return $data;
-                        })
-                        ->mutateRelationshipDataBeforeSaveUsing(function ($data, $record) {
-                            $product = Product::find($data['product_id']);
-                            $product->stock = $product->stock - $record->qty + $data['qty'];
-                            $product->save();
-
-                            return $data;
-                            // problem: kalo hapus item repeater pas edit stoknya gimana?
-                        }),
-                ]),
+                Section::make('Purchase Items')->schema([static::getRepeaterPurchaseItems()]),
 
                 Section::make()->schema([
                     TextInput::make('total_items')
-                        ->readOnly()
+                        ->disabled()
+                        ->dehydrated()
                         ->required()
                         ->numeric()
-                        ->default(0)
+                        ->default(fn(Get $get) => array_sum(array_column($get('purchaseItems'), 'qty')))
                         ->minValue(1)
                         ->inlineLabel(),
 
                     TextInput::make('subtotal')
-                        ->readOnly()
+                        ->disabled()
+                        ->dehydrated()
                         ->required()
                         ->numeric()
                         ->prefix('Rp.')
-                        ->default(0)
+                        ->default(fn(Get $get) => array_sum(array_column($get('purchaseItems'), 'total')))
                         ->minValue(1)
                         ->inlineLabel(),
                 ])->columnStart(['lg' => 2]),
@@ -220,7 +146,8 @@ class PurchaseResource extends Resource
                         ->inlineLabel(),
 
                     TextInput::make('total_discount')
-                        ->readOnly()
+                        ->disabled()
+                        ->dehydrated()
                         ->required()
                         ->numeric()
                         ->prefix('Rp.')
@@ -228,11 +155,12 @@ class PurchaseResource extends Resource
                         ->inlineLabel(),
 
                     TextInput::make('grandtotal')
-                        ->readOnly()
+                        ->disabled()
+                        ->dehydrated()
                         ->required()
                         ->numeric()
                         ->prefix('Rp.')
-                        ->default(0)
+                        ->default(fn(Get $get) => array_sum(array_column($get('purchaseItems'), 'total')))
                         ->minValue(1)
                         ->inlineLabel(),
                 ])->columnStart(['lg' => 2]),
@@ -256,6 +184,20 @@ class PurchaseResource extends Resource
     {
         return $table
             ->columns([
+                TextColumn::make('No')
+                    ->rowIndex()
+                    ->alignCenter()
+                    ->toggleable(),
+
+                TextColumn::make('date')
+                    ->alignCenter()
+                    ->date()
+                    // ->since()
+                    // ->dateTimeTooltip()
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
+
                 TextColumn::make('code')
                     ->alignCenter()
                     ->searchable()
@@ -297,6 +239,7 @@ class PurchaseResource extends Resource
                     ->toggledHiddenByDefault(),
 
                 TextColumn::make('total_items')
+                    ->label('Items')
                     ->alignCenter()
                     ->searchable()
                     ->sortable()
@@ -328,48 +271,8 @@ class PurchaseResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->toggleable(),
-
-                TextColumn::make('date')
-                    ->label('Purchased at')
-                    ->alignCenter()
-                    ->date()
-                    // ->since()
-                    // ->dateTimeTooltip()
-                    ->searchable()
-                    ->sortable()
-                    ->toggleable(),
             ])
             ->defaultSort('date', 'desc')
-            ->filters([
-                Filter::make('date')
-                    ->form([
-                        Grid::make('date')->schema([
-                            DatePicker::make('purchased_from')
-                                ->label('From'),
-
-                            DatePicker::make('purchased_until')
-                                ->label('Until')
-                                ->default(now()),
-                        ])->columns(2)
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when(
-                                $data['purchased_from'],
-                                fn(Builder $query, $date): Builder => $query->whereDate('date', '>=', $date),
-                            )
-                            ->when(
-                                $data['purchased_until'],
-                                fn(Builder $query, $date): Builder => $query->whereDate('date', '<=', $date),
-                            );
-                    }),
-
-                SelectFilter::make('vendor')
-                    ->relationship('vendor', 'name')
-                    ->multiple()
-                    ->preload()
-                    ->searchable(),
-            ])
             ->actions([
                 CustomAction::make('print_invoice')
                     ->label('Invoice')
@@ -381,31 +284,51 @@ class PurchaseResource extends Resource
                 ActionGroup::make([
                     ViewAction::make(),
                     EditAction::make()->color('info'),
-                    CustomAction::make('return')
-                        ->label('Return this purchase')
-                        ->icon('heroicon-o-arrow-uturn-left')
-                        ->url(fn(Purchase $record): string => PurchaseReturnResource::getUrl('create', ['purchase_id' => $record->id]))
-                        ->openUrlInNewTab()
-                        ->hidden(fn(Purchase $record) => $record->purchaseReturns->count() > 0)
-                        ->color('danger'),
+                    DeleteAction::make(),
+                    ForceDeleteAction::make(),
+                    RestoreAction::make(),
                 ])
             ])
-            ->bulkActions([BulkActionGroup::make([DeleteBulkAction::make()])])
+            ->filters([
+                // Filter::make('date')
+                //     ->form([
+                //         DatePicker::make('purchased_from'),
+                //         DatePicker::make('purchased_until'),
+                //     ])
+                //     ->query(function (Builder $query, array $data): Builder {
+                //         return $query
+                //             ->when(
+                //                 $data['purchased_from'] ?? null,
+                //                 fn(Builder $query, $date): Builder => $query->whereDate('date', '>=', $date),
+                //             )
+                //             ->when(
+                //                 $data['purchased_until'] ?? null,
+                //                 fn(Builder $query, $date): Builder => $query->whereDate('date', '<=', $date),
+                //             );
+                //     }),
+
+                SelectFilter::make('vendor')
+                    ->relationship('vendor', 'name')
+                    ->multiple()
+                    ->preload()
+                    ->searchable(),
+
+                TrashedFilter::make(),
+            ])
             ->groups([
                 GroupFilter::make('date')
                     ->label('Purchased at')
                     ->date()
                     ->collapsible(),
 
-                GroupFilter::make('vendor.name')
-                    ->collapsible(),
+                GroupFilter::make('vendor.name')->collapsible(),
             ])
-            ->defaultGroup('date');
+            ->groupedBulkActions([DeleteBulkAction::make(), ExportBulkAction::make()->exporter(PurchaseExporter::class)]);
     }
 
-    public static function getRelations(): array
+    public static function getWidgets(): array
     {
-        return [];
+        return [PurchaseStats::class];
     }
 
     public static function getPages(): array
@@ -416,6 +339,21 @@ class PurchaseResource extends Resource
             'view' => ViewPurchase::route('/{record}'),
             'edit' => EditPurchase::route('/{record}/edit'),
         ];
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->withoutGlobalScope(SoftDeletingScope::class);
+    }
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['code', 'invoice'];
+    }
+
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        return [date('d M Y', strtotime($record->date)) . ' : ' . $record->vendor?->name . ' - ' . $record->vendor?->short_address];
     }
 
     static function calcTotal(Set $set, Get $get)
@@ -435,5 +373,104 @@ class PurchaseResource extends Resource
         $set('subtotal', $subTotal);
 
         $set('grandtotal', $subTotal + ($get('shipping_price') ?: 0));
+    }
+
+    static function getRepeaterPurchaseItems()
+    {
+        return Repeater::make('purchaseItems')
+            ->required()
+            ->relationship()
+            ->hiddenLabel()->schema([
+                Select::make('product_id')
+                    ->required()
+                    ->relationship('product', 'name')
+                    ->preload()
+                    ->searchable()
+                    ->disableOptionsWhenSelectedInSiblingRepeaterItems()
+                    ->reactive()
+                    ->afterStateUpdated(fn(Set $set, $state) => $set('price', Product::find($state)?->post_tax_price))
+                    ->createOptionForm(fn(Form $form) => ProductResource::form($form))
+                    ->createOptionAction(fn(Action $action) => $action->modalWidth('6xl'))
+                    ->columnSpan(2),
+
+                TextInput::make('price')
+                    ->required()
+                    ->numeric()
+                    ->prefix('Rp.')
+                    ->minValue(1)
+                    ->live(onBlur: true)
+                    ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
+
+                TextInput::make('qty')
+                    ->required()
+                    ->numeric()
+                    ->minValue(1)
+                    ->live()
+                    ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
+
+                TextInput::make('discount')
+                    ->required()
+                    ->numeric()
+                    ->suffix('%')
+                    ->default(0)
+                    ->rules(['min:0', 'max:100'])
+                    ->live(onBlur: true)
+                    ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
+
+                TextInput::make('total')
+                    ->required()
+                    ->disabled()
+                    ->dehydrated()
+                    ->numeric()
+                    ->default(0)
+                    ->prefix('Rp.'),
+            ])
+            ->default(Product::all()->map(fn($product) => [
+                'product_id' => $product->id,
+                'price' => $product->post_tax_price,
+                'qty' => 1,
+                'discount' => 0,
+                'total' => $product->post_tax_price,
+            ])->toArray())
+            ->collapsed()
+            ->reorderable()
+            ->columns(6)
+            ->live(onBlur: true)
+            ->afterStateUpdated(fn(Set $set, Get $get) => self::calcGrandTotal($set, $get))
+            ->itemLabel(function (array $state): ?string {
+                $product = Product::find($state['product_id']);
+                if (!$product) return null;
+
+                return "($product->code) $product->name - $product->stock products left.";
+            })
+            ->extraItemActions([
+                Action::make('openProduct')
+                    ->tooltip('Open product')
+                    ->icon('heroicon-m-arrow-top-right-on-square')
+                    ->url(function (array $arguments, Repeater $component): ?string {
+                        $itemData = $component->getRawItemState($arguments['item']);
+
+                        $product = Product::find($itemData['product_id']);
+                        if (!$product) return null;
+
+                        return ProductResource::getUrl('edit', ['record' => $product]);
+                    }, shouldOpenInNewTab: true)
+                    ->hidden(fn(array $arguments, Repeater $component): bool => blank($component->getRawItemState($arguments['item'])['product_id'])),
+            ])
+            ->mutateRelationshipDataBeforeCreateUsing(function ($data) {
+                $product = Product::find($data['product_id']);
+                $product->stock = $product->stock + $data['qty'];
+                $product->save();
+
+                return $data;
+            })
+            ->mutateRelationshipDataBeforeSaveUsing(function ($data, $record) {
+                $product = Product::find($data['product_id']);
+                $product->stock = $product->stock - $record->qty + $data['qty'];
+                $product->save();
+
+                return $data;
+                // problem: kalo hapus item repeater pas edit stoknya gimana?
+            });
     }
 }

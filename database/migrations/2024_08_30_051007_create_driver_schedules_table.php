@@ -13,9 +13,9 @@ return new class extends Migration
     {
         Schema::create('driver_schedules', function (Blueprint $table) {
             $table->id();
-            $table->enum('day', ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu']);
-            $table->foreignId('driver_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('customer_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('driver_id');
+            $table->foreignId('sale_id');
+            $table->dateTime('date')->defaultNow();
             $table->timestamps();
         });
     }

@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\PurchaseResource\Pages;
 
-use App\Filament\Resources\PurchaseResource;
-use Filament\Actions;
+use Filament\Actions\ViewAction;
 use Filament\Resources\Pages\EditRecord;
+use App\Filament\Resources\PurchaseResource;
 
 class EditPurchase extends EditRecord
 {
@@ -17,6 +17,6 @@ class EditPurchase extends EditRecord
 
     protected function getHeaderActions(): array
     {
-        return [Actions\ViewAction::make()];
+        return [ViewAction::make()];
     }
 }

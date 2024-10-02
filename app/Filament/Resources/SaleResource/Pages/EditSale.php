@@ -8,7 +8,6 @@ use Filament\Actions;
 use App\Filament\Resources\SaleResource;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Pages\EditRecord;
-use App\Filament\Resources\SaleReturnResource;
 
 class EditSale extends EditRecord
 {
@@ -40,19 +39,14 @@ class EditSale extends EditRecord
                     $record->status = Status::Delivered;
                     $record->save();
                 }),
+
             Actions\Action::make('print_invoice')
                 ->label('Invoice')
                 ->icon('heroicon-o-printer')
                 ->url(fn(Sale $record): string => route('sales.invoice.print', $record))
                 ->openUrlInNewTab()
                 ->color('primary'),
-            Actions\Action::make('return')
-                ->label('Return this sale')
-                ->icon('heroicon-o-arrow-uturn-left')
-                ->url(fn(Sale $record): string => SaleReturnResource::getUrl('create', ['sale_id' => $record->id]))
-                ->openUrlInNewTab()
-                ->hidden(fn(Sale $record) => $record->saleReturnInvoices->count() > 0)
-                ->color('danger'),
+
             Actions\ViewAction::make()
         ];
     }

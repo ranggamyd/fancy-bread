@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Models\Vendor;
 use Filament\Forms\Form;
 use Filament\Tables\Table;
+use Illuminate\Support\Str;
 use Filament\Resources\Resource;
 use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Group;
@@ -12,12 +13,21 @@ use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Textarea;
 use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
+use Illuminate\Database\Eloquent\Model;
+use App\Filament\Exports\VendorExporter;
 use Filament\Forms\Components\TextInput;
-use Filament\Notifications\Notification;
+use Filament\Tables\Actions\ActionGroup;
 use Filament\Tables\Actions\DeleteAction;
+use Illuminate\Database\Eloquent\Builder;
 use Filament\Forms\Components\Placeholder;
+use Filament\Tables\Actions\RestoreAction;
+use Filament\Tables\Filters\TrashedFilter;
+use Illuminate\Contracts\Support\Htmlable;
 use Filament\Tables\Actions\BulkActionGroup;
 use Filament\Tables\Actions\DeleteBulkAction;
+use Filament\Tables\Actions\ExportBulkAction;
+use Filament\Tables\Actions\ForceDeleteAction;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\VendorResource\Pages\EditVendor;
 use App\Filament\Resources\VendorResource\Pages\ListVendors;
 use App\Filament\Resources\VendorResource\Pages\CreateVendor;
@@ -28,6 +38,8 @@ class VendorResource extends Resource
     protected static ?string $model = Vendor::class;
 
     protected static ?string $navigationGroup = 'Fancy Master';
+
+    protected static ?string $recordTitleAttribute = 'name';
 
     protected static ?int $navigationSort = 4;
 
@@ -78,6 +90,11 @@ class VendorResource extends Resource
     {
         return $table
             ->columns([
+                TextColumn::make('No')
+                    ->rowIndex()
+                    ->alignCenter()
+                    ->toggleable(),
+
                 TextColumn::make('code')
                     ->alignCenter()
                     ->searchable()
@@ -101,33 +118,14 @@ class VendorResource extends Resource
                     ->toggleable(),
             ])
             ->defaultSort('code')
-            ->filters([
-                //
-            ])
-            ->deferFilters()
-            ->actions([
-                EditAction::make(),
-                DeleteAction::make()
-                    ->action(function ($data, $record) {
-                        if ($record->purchases()->exists()) {
-                            Notification::make()
-                                ->danger()
-                                ->title('Vendor is in use')
-                                ->body('Vendor is exist on purchases.')
-                                ->send();
-
-                            return;
-                        }
-
-                        Notification::make()
-                            ->success()
-                            ->title('Deleted')
-                            ->send();
-
-                        $record->delete();
-                    }),
-            ])
-            ->bulkActions([BulkActionGroup::make([DeleteBulkAction::make()])]);
+            ->actions([ActionGroup::make([
+                EditAction::make()->color('info'),
+                DeleteAction::make(),
+                ForceDeleteAction::make(),
+                RestoreAction::make(),
+            ])])
+            ->filters([TrashedFilter::make()])
+            ->groupedBulkActions([DeleteBulkAction::make(), ExportBulkAction::make()->exporter(VendorExporter::class)]);
     }
 
     public static function getRelations(): array
@@ -142,5 +140,25 @@ class VendorResource extends Resource
             'create' => CreateVendor::route('/create'),
             'edit' => EditVendor::route('/{record}/edit'),
         ];
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->withoutGlobalScope(SoftDeletingScope::class);
+    }
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['code', 'name', 'short_address', 'full_address'];
+    }
+
+    public static function getGlobalSearchResultTitle(Model $record): string | Htmlable
+    {
+        return $record->name . ' - ' . $record->short_address;
+    }
+
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        return [Str::limit($record->full_address, 30)];
     }
 }

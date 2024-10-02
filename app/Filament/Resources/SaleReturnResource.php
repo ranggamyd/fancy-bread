@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources;
 
-use Carbon\Carbon;
 use App\Models\Sale;
 use App\Models\Product;
 use Filament\Forms\Get;
@@ -12,45 +11,65 @@ use Filament\Forms\Form;
 use App\Models\SaleReturn;
 use Filament\Tables\Table;
 use Filament\Resources\Resource;
+use Filament\Actions\DeleteAction;
 use Filament\Forms\Components\Grid;
 use Filament\Tables\Filters\Filter;
 use Filament\Forms\Components\Group;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Textarea;
 use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Illuminate\Database\Eloquent\Model;
 use Filament\Forms\Components\TextInput;
+use Filament\Tables\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Filters\SelectFilter;
 use Illuminate\Database\Eloquent\Builder;
 use Filament\Forms\Components\Placeholder;
+use Filament\Tables\Actions\RestoreAction;
+use Filament\Tables\Filters\TrashedFilter;
 use App\Filament\Resources\ProductResource;
-use Filament\Tables\Actions\BulkActionGroup;
+use App\Filament\Exports\SaleReturnExporter;
 use Filament\Forms\Components\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
-use Filament\Forms\Components\MarkdownEditor;
 use Filament\Tables\Actions\DeleteBulkAction;
+use Filament\Tables\Actions\ExportBulkAction;
+use Filament\Tables\Actions\ForceDeleteAction;
 use Filament\Tables\Grouping\Group as GroupFilter;
-use Filament\Tables\Actions\Action as CustomAction;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\SaleReturnResource\Pages\EditSaleReturn;
 use App\Filament\Resources\SaleReturnResource\Pages\ViewSaleReturn;
 use App\Filament\Resources\SaleReturnResource\Pages\ListSaleReturns;
 use App\Filament\Resources\SaleReturnResource\Pages\CreateSaleReturn;
-use Filament\Forms\Components\Textarea;
 
 class SaleReturnResource extends Resource
 {
     protected static ?string $model = SaleReturn::class;
 
-    protected static ?string $navigationGroup = 'Transaction';
+    protected static ?string $recordTitleAttribute = 'code';
 
+    protected static ?string $navigationGroup = 'Sales';
+    protected static ?string $navigationLabel = 'Returns';
     protected static ?string $navigationIcon = 'heroicon-o-arrow-uturn-left';
 
     public static function form(Form $form, Customer $customer = null): Form
     {
+        $saleIds = explode(',', request('sales'));
+
+        $saleReturnInvoices = Sale::whereIn('id', $saleIds)->get()->map(function ($sale) {
+            return [
+                'sale_id' => $sale->id,
+                'goods_receipt_number' => $sale->goods_receipt_number,
+                'customer_id' => $sale->customer_id,
+                'total_items' => $sale->total_items,
+                'grandtotal' => $sale->grandtotal,
+                'date' => $sale->date,
+            ];
+        })->values()->toArray();
+
         return $form->schema([
             Group::make()->schema([
                 Section::make('Sale Return Information')->schema([
@@ -58,25 +77,7 @@ class SaleReturnResource extends Resource
                         TextInput::make('code')
                             ->required()
                             ->readOnly()
-                            ->default('TS-C-' . strtotime(now()))
-                            ->unique(ignoreRecord: true),
-
-                        TextInput::make('invoice')
-                            ->required()
-                            ->readOnly()
-                            ->default(function () {
-                                $currentYear = Carbon::now()->year;
-                                $latestInvoice = SaleReturn::whereYear('created_at', $currentYear)
-                                    ->latest()
-                                    ->first();
-                                if ($latestInvoice) {
-                                    $latestNumber = (int) substr($latestInvoice->invoice, -4);
-                                    $newNumber = $latestNumber + 1;
-                                } else {
-                                    $newNumber = 1;
-                                }
-                                return 'FC/SC/' . $currentYear . '/' . str_pad($newNumber, 4, '0', STR_PAD_LEFT);
-                            })
+                            ->default('FC/S/RTN/' . strtotime(now()))
                             ->unique(ignoreRecord: true),
 
                         DateTimePicker::make('date')
@@ -91,155 +92,24 @@ class SaleReturnResource extends Resource
                     Textarea::make('notes')->rows(1),
                 ]),
 
-                Section::make('Sale Return Invoices')->schema([
-                    Repeater::make('saleReturnInvoices')
-                        ->required()
-                        ->relationship()
-                        ->hiddenLabel()->schema([
-                            Select::make('sale_id')
-                                ->label('Invoice')
-                                ->required()
-                                ->relationship('sale', 'invoice')
-                                ->disabled()
-                                ->dehydrated(),
+                Section::make('Sale Return Invoices')->schema([static::getRepeaterSaleReturnInvoices($saleReturnInvoices)])->collapsed(),
 
-                            TextInput::make('goods_receipt_number')
-                                ->label('No. LPB')
-                                ->required()
-                                ->disabled(),
-
-                            Select::make('customer_id')
-                                ->label('Customer')
-                                ->required()
-                                ->relationship('sale.customer', modifyQueryUsing: fn(Builder $query) => $query->orderBy('code')->orderBy('name'))
-                                ->getOptionLabelFromRecordUsing(fn(Model $record) => "({$record->code}) {$record->name} - {$record->short_address}")
-                                ->disabled(),
-
-                            TextInput::make('grandtotal')
-                                ->required()
-                                ->numeric()
-                                ->prefix('Rp.')
-                                ->disabled(),
-
-                            DateTimePicker::make('date')
-                                ->required()
-                                ->suffixIcon('heroicon-o-calendar')
-                                ->disabled(),
-                        ])
-                        ->columns(5)
-                        ->addable(false)
-                        ->reorderable(false)
-                        ->deletable(false)
-                        ->default(function () {
-                            $saleReturnInvoices = [];
-                            foreach (explode(',', request('sales')) as $saleId) {
-                                $sale = Sale::find($saleId);
-
-                                $saleReturnInvoices[] = [
-                                    'sale_id' => $sale->id,
-                                    'goods_receipt_number' => $sale->goods_receipt_number,
-                                    'customer_id' => $sale->customer_id,
-                                    'grandtotal' => $sale->grandtotal,
-                                    'date' => $sale->date,
-                                ];
-                            };
-
-                            return $saleReturnInvoices;
-                        })
-                        ->mutateRelationshipDataBeforeFillUsing(function (array $data): array {
-                            $sale = Sale::find($data['sale_id']);
-
-                            $data['goods_receipt_number'] = $sale->goods_receipt_number;
-                            $data['customer_id'] = $sale->customer_id;
-                            $data['grandtotal'] = $sale->grandtotal;
-                            $data['date'] = $sale->date;
-
-                            return $data;
-                        }),
-                ])->collapsed(),
-
-                Section::make('Sale Return Items')->schema([
-                    Repeater::make('saleReturnItems')
-                        ->required()
-                        ->relationship()
-                        ->hiddenLabel()->schema([
-                            Select::make('product_id')
-                                ->required()
-                                ->relationship('product', 'name')
-                                ->preload()
-                                ->searchable()
-                                ->disableOptionsWhenSelectedInSiblingRepeaterItems()
-                                ->reactive()
-                                ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
-
-                            TextInput::make('price')
-                                ->readOnly()
-                                ->required()
-                                ->numeric()
-                                ->prefix('Rp.')
-                                ->default(0)
-                                ->live(onBlur: true)
-                                ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
-
-                            TextInput::make('qty')
-                                ->required()
-                                ->numeric()
-                                ->default(0)
-                                ->minValue(1)
-                                ->live()
-                                ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
-
-                            TextInput::make('total')
-                                ->disabled()
-                                ->dehydrated()
-                                ->required()
-                                ->numeric()
-                                ->prefix('Rp.')
-                                ->default(0),
-                        ])
-                        ->columns(4)
-                        ->reorderable()
-                        ->live(onBlur: true)
-                        ->afterStateUpdated(fn(Set $set, Get $get) => self::calcGrandTotal($set, $get))
-                        ->deleteAction(fn(Action $action) => $action->after(fn(Set $set, Get $get) => self::calcGrandTotal($set, $get)))
-                        ->itemLabel(function (array $state): ?string {
-                            $product = Product::find($state['product_id']);
-                            if (!$product) return null;
-
-                            $stock = $product->stock;
-
-                            return "($product->code) $product->name - $stock product(s) available.";
-                        })
-                        ->extraItemActions([
-                            Action::make('openProduct')
-                                ->tooltip('Open product')
-                                ->icon('heroicon-m-arrow-top-right-on-square')
-                                ->url(function (array $arguments, Repeater $component): ?string {
-                                    $itemData = $component->getRawItemState($arguments['item']);
-
-                                    $product = Product::find($itemData['product_id']);
-                                    if (!$product) return null;
-
-                                    return ProductResource::getUrl('edit', ['record' => $product]);
-                                }, shouldOpenInNewTab: true)
-                                ->hidden(fn(array $arguments, Repeater $component): bool => blank($component->getRawItemState($arguments['item'])['product_id'])),
-                        ])
-                ]),
+                Section::make('Sale Return Items')->schema([static::getRepeaterSaleReturnItems()]),
 
                 Section::make()->schema([
                     TextInput::make('total_items')
+                        ->required()
                         ->disabled()
                         ->dehydrated()
-                        ->required()
                         ->numeric()
                         ->default(0)
                         ->minValue(1)
                         ->inlineLabel(),
 
                     TextInput::make('subtotal')
+                        ->required()
                         ->disabled()
                         ->dehydrated()
-                        ->required()
                         ->numeric()
                         ->prefix('Rp.')
                         ->default(0)
@@ -248,15 +118,6 @@ class SaleReturnResource extends Resource
                 ])->columnStart(['lg' => 2]),
 
                 Section::make()->schema([
-                    TextInput::make('shipping_price')
-                        ->required()
-                        ->numeric()
-                        ->prefix('Rp.')
-                        ->default(0)
-                        ->live(onBlur: true)
-                        ->afterStateUpdated(fn(Set $set, Get $get) => self::calcGrandTotal($set, $get))
-                        ->inlineLabel(),
-
                     TextInput::make('grandtotal')
                         ->disabled()
                         ->dehydrated()
@@ -287,24 +148,37 @@ class SaleReturnResource extends Resource
     {
         return $table
             ->columns([
+                TextColumn::make('No')
+                    ->rowIndex()
+                    ->alignCenter()
+                    ->toggleable(),
+
+                TextColumn::make('date')
+                    ->alignCenter()
+                    ->date()
+                    // ->since()
+                    // ->dateTimeTooltip()
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
+
                 TextColumn::make('code')
                     ->alignCenter()
                     ->searchable()
                     ->sortable()
                     ->toggleable(),
 
-                TextColumn::make('invoice')
-                    ->alignCenter()
-                    ->searchable()
-                    ->sortable()
-                    ->toggleable(),
-
                 TextColumn::make('saleReturnInvoices.sale.customer.name')
+                    ->formatStateUsing(function ($state) {
+                        $customer = Customer::where('name', $state)->first();
+                        return $customer?->name . ' - ' . $customer?->short_address;
+                    })
                     ->distinctList()
+                    ->listWithLineBreaks()
+                    ->limitList(2)
+                    ->expandableLimitedList()
                     ->searchable()
-                    ->sortable()
-                    ->toggleable()
-                    ->toggledHiddenByDefault(),
+                    ->toggleable(),
 
                 TextColumn::make('notes')
                     ->limit(10)
@@ -323,6 +197,7 @@ class SaleReturnResource extends Resource
                     ->toggledHiddenByDefault(),
 
                 TextColumn::make('total_items')
+                    ->label('Items')
                     ->alignCenter()
                     ->searchable()
                     ->sortable()
@@ -335,43 +210,23 @@ class SaleReturnResource extends Resource
                     ->toggleable()
                     ->toggledHiddenByDefault(),
 
-                TextColumn::make('shipping_price')
-                    ->money('IDR')
-                    ->searchable()
-                    ->sortable()
-                    ->toggleable()
-                    ->toggledHiddenByDefault(),
-
-                TextColumn::make('discount')
-                    ->money('IDR')
-                    ->searchable()
-                    ->sortable()
-                    ->toggleable()
-                    ->toggledHiddenByDefault(),
-
                 TextColumn::make('grandtotal')
                     ->money('IDR')
                     ->searchable()
                     ->sortable()
                     ->toggleable(),
-
-                TextColumn::make('date')
-                    ->label('Sold at')
-                    ->alignCenter()
-                    ->date()
-                    // ->since()
-                    // ->dateTimeTooltip()
-                    ->searchable()
-                    ->sortable()
-                    ->toggleable(),
             ])
             ->defaultSort('date', 'desc')
+            ->actions([ActionGroup::make([
+                ViewAction::make(),
+                EditAction::make()->color('info'),
+                DeleteAction::make(),
+                ForceDeleteAction::make(),
+                RestoreAction::make(),
+            ])])
             ->filters([
                 Filter::make('date')
-                    ->form([
-                        DatePicker::make('returned_from'),
-                        DatePicker::make('returned_until'),
-                    ])
+                    ->form([DatePicker::make('returned_from'), DatePicker::make('returned_until')])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
                             ->when(
@@ -390,31 +245,10 @@ class SaleReturnResource extends Resource
                     ->preload()
                     ->searchable(),
 
-                SelectFilter::make('product')
-                    ->relationship('saleReturnItems.product', 'name')
-                    ->multiple()
-                    ->preload()
-                    ->searchable(),
+                TrashedFilter::make(),
             ])
-            ->actions([
-                ViewAction::make(),
-                EditAction::make(),
-            ])
-            ->bulkActions([BulkActionGroup::make([DeleteBulkAction::make()])])
-            ->groups([
-                GroupFilter::make('date')
-                    ->label('Returned at')
-                    ->date()
-                    ->collapsible(),
-
-                // GroupFilter::make('customer.name')->collapsible(),
-            ])
-            ->defaultGroup('date');
-    }
-
-    public static function getRelations(): array
-    {
-        return [];
+            ->groups([GroupFilter::make('date')->label('Returned at')->date()->collapsible()])
+            ->groupedBulkActions([DeleteBulkAction::make(), ExportBulkAction::make()->exporter(SaleReturnExporter::class)]);
     }
 
     public static function getPages(): array
@@ -427,9 +261,157 @@ class SaleReturnResource extends Resource
         ];
     }
 
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->withoutGlobalScope(SoftDeletingScope::class);
+    }
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['code', 'saleReturnInvoices.sale.code', 'saleReturnInvoices.sale.invoice'];
+    }
+
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        return parent::getGlobalSearchEloquentQuery()->with(['saleReturnInvoices']);
+    }
+
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        return [date('d M Y', strtotime($record->date)) . ' : ' . $record->saleReturnInvoices?->pluck('sale.customer.name')->join('') . ' - ' . $record->saleReturnInvoices?->pluck('sale.customer.short_address')->join('')];
+    }
+
+    static function getRepeaterSaleReturnInvoices($saleReturnInvoices)
+    {
+        return Repeater::make('saleReturnInvoices')
+            ->required()
+            ->relationship()
+            ->hiddenLabel()->schema([
+                Select::make('sale_id')
+                    ->label('Invoice')
+                    ->required()
+                    ->disabled()
+                    ->dehydrated()
+                    ->relationship('sale', 'invoice'),
+
+                TextInput::make('goods_receipt_number')
+                    ->label('No. LPB')
+                    ->required()
+                    ->disabled(),
+
+                Select::make('customer_id')
+                    ->label('Customer')
+                    ->required()
+                    ->relationship('sale.customer', modifyQueryUsing: fn(Builder $query) => $query->orderBy('code')->orderBy('name'))
+                    ->getOptionLabelFromRecordUsing(fn(Model $record) => "({$record->code}) {$record->name} - {$record->short_address}")
+                    ->disabled(),
+
+                TextInput::make('total_items')
+                    ->required()
+                    ->disabled(),
+
+                TextInput::make('grandtotal')
+                    ->required()
+                    ->disabled()
+                    ->numeric()
+                    ->prefix('Rp.'),
+
+                DateTimePicker::make('date')
+                    ->required()
+                    ->disabled()
+                    ->suffixIcon('heroicon-o-calendar'),
+            ])
+            ->columns(6)
+            ->addable(false)
+            ->reorderable(false)
+            ->deletable(false)
+            ->default($saleReturnInvoices)
+            ->mutateRelationshipDataBeforeFillUsing(function (array $data): array {
+                $sale = Sale::find($data['sale_id']);
+
+                $data['goods_receipt_number'] = $sale->goods_receipt_number;
+                $data['customer_id'] = $sale->customer_id;
+                $data['total_items'] = $sale->total_items;
+                $data['grandtotal'] = $sale->grandtotal;
+                $data['date'] = $sale->date;
+
+                return $data;
+            });
+    }
+
+    static function getRepeaterSaleReturnItems()
+    {
+        return Repeater::make('saleReturnItems')
+            ->required()
+            ->relationship()
+            ->hiddenLabel()->schema([
+                Select::make('product_id')
+                    ->required()
+                    ->relationship('product', 'name')
+                    ->preload()
+                    ->searchable()
+                    ->disableOptionsWhenSelectedInSiblingRepeaterItems()
+                    ->reactive()
+                    ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
+
+                TextInput::make('price')
+                    ->required()
+                    ->disabled()
+                    ->dehydrated()
+                    ->numeric()
+                    ->prefix('Rp.')
+                    ->default(0)
+                    ->live(onBlur: true)
+                    ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
+
+                TextInput::make('qty')
+                    ->required()
+                    ->numeric()
+                    ->minValue(1)
+                    ->live()
+                    ->afterStateUpdated(fn(Set $set, Get $get) => self::calcTotal($set, $get)),
+
+                TextInput::make('total')
+                    ->required()
+                    ->disabled()
+                    ->dehydrated()
+                    ->numeric()
+                    ->prefix('Rp.')
+                    ->default(0),
+            ])
+            ->columns(4)
+            ->reorderable()
+            ->live(onBlur: true)
+            ->afterStateUpdated(fn(Set $set, Get $get) => self::calcGrandTotal($set, $get))
+            ->deleteAction(fn(Action $action) => $action->after(fn(Set $set, Get $get) => self::calcGrandTotal($set, $get)))
+            ->itemLabel(function (array $state): ?string {
+                $product = Product::find($state['product_id']);
+                if (!$product) return null;
+
+                $stock = $product->stock;
+
+                return "($product->code) $product->name - $stock products available.";
+            })
+            ->extraItemActions([
+                Action::make('openProduct')
+                    ->tooltip('Open product')
+                    ->icon('heroicon-m-arrow-top-right-on-square')
+                    ->url(function (array $arguments, Repeater $component): ?string {
+                        $itemData = $component->getRawItemState($arguments['item']);
+
+                        $product = Product::find($itemData['product_id']);
+                        if (!$product) return null;
+
+                        return ProductResource::getUrl('edit', ['record' => $product]);
+                    }, shouldOpenInNewTab: true)
+                    ->hidden(fn(array $arguments, Repeater $component): bool => blank($component->getRawItemState($arguments['item'])['product_id'])),
+            ]);
+    }
+
     static function calcTotal(Set $set, Get $get)
     {
         $product = Product::find($get('product_id'));
+
         $set('price', $product?->post_tax_price);
         $set('total', ($get('price') ?: 0) * ($get('qty') ?: 0));
     }
@@ -442,6 +424,6 @@ class SaleReturnResource extends Resource
         $subTotal = collect($get('saleReturnItems'))->reduce(fn($subTotal, $item) => $subTotal + ($item['price'] ?: 0) * ($item['qty'] ?: 0), 0);
         $set('subtotal', $subTotal);
 
-        $set('grandtotal', $subTotal + ($get('shipping_price') ?: 0));
+        $set('grandtotal', $subTotal);
     }
 }

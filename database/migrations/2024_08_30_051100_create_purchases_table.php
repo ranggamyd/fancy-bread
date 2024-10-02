@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('code')->unique();
             $table->string('invoice')->unique();
-            $table->foreignId('vendor_id')->constrained()->restrictOnDelete();
+            $table->foreignId('vendor_id');
             $table->text('notes')->nullable();
             $table->integer('total_items');
             $table->float('subtotal');
@@ -24,6 +24,7 @@ return new class extends Migration
             $table->float('grandtotal');
             $table->dateTime('date')->defaultNow();
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

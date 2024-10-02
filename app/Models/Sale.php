@@ -2,19 +2,17 @@
 
 namespace App\Models;
 
-use App\Enums\PaymentStatus;
 use App\Enums\Status;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Sale extends Model
 {
     use HasFactory;
+    use SoftDeletes;
 
-    protected $casts = [
-        'status' => Status::class,
-        'payment_status' => PaymentStatus::class
-    ];
+    protected $casts = ['status' => Status::class];
 
     public function customer()
     {
@@ -26,13 +24,18 @@ class Sale extends Model
         return $this->hasMany(SaleItem::class);
     }
 
-    public function salePayments()
+    public function SaleReturnInvoice()
     {
-        return $this->hasMany(SalePayment::class);
+        return $this->hasOne(SaleReturnInvoice::class);
     }
 
-    public function saleReturnInvoices()
+    public function SaleReceiptInvoice()
     {
-        return $this->hasMany(SaleReturnInvoice::class);
+        return $this->hasOne(SaleReceiptInvoice::class);
+    }
+
+    public function Driver()
+    {
+        return $this->belongsTo(Driver::class);
     }
 }

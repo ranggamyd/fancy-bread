@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('code')->unique();
             $table->string('name');
-            $table->foreignId('brand_id')->constrained()->restrictOnDelete();
+            $table->foreignId('brand_id');
             $table->text('description')->nullable();
             $table->string('image')->nullable();
             $table->float('pre_tax_price')->default(0);
@@ -24,11 +24,12 @@ return new class extends Migration
             $table->float('margin')->default(0);
             $table->string('sku')->unique()->nullable();
             $table->string('barcode')->unique()->nullable();
-            $table->integer('stock')->default(1);
+            $table->integer('stock')->default(100);
             $table->integer('security_stock')->default(1);
             $table->enum('unit_type', ['Pcs', 'Pack/Box', 'Kg'])->default('Pcs');
             $table->integer('total_items')->nullable();
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

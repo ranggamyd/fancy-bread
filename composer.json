@@ -9,8 +9,11 @@
         "aymanalhattami/filament-slim-scrollbar": "^2.0",
         "barryvdh/laravel-dompdf": "^3.0",
         "filament/filament": "^3.2",
+        "filament/notifications": "^3.2",
         "laravel/framework": "^11.9",
-        "laravel/tinker": "^2.9"
+        "laravel/tinker": "^2.9",
+        "riskihajar/terbilang": "^2.0",
+        "saade/filament-fullcalendar": "^3.2"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

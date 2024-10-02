@@ -2,13 +2,10 @@
 
 namespace App\Filament\Resources\VendorResource\RelationManagers;
 
-use Filament\Forms;
-use Filament\Tables;
 use Filament\Forms\Form;
 use Filament\Tables\Table;
+use Filament\Tables\Actions\CreateAction;
 use App\Filament\Resources\PurchaseResource;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Filament\Resources\RelationManagers\RelationManager;
 
 class PurchasesRelationManager extends RelationManager
@@ -22,6 +19,6 @@ class PurchasesRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return PurchaseResource::table($table)->headerActions([Tables\Actions\CreateAction::make()]);
+        return PurchaseResource::table($table)->headerActions([CreateAction::make()]);
     }
 }

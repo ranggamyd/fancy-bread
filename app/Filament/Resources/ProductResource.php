@@ -8,7 +8,9 @@ use Filament\Forms\Set;
 use App\Models\Category;
 use Filament\Forms\Form;
 use Filament\Tables\Table;
+use Illuminate\Support\Str;
 use Filament\Resources\Resource;
+use App\Filament\Clusters\Products;
 use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Group;
 use Filament\Forms\Components\Select;
@@ -17,44 +19,49 @@ use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
 use Illuminate\Database\Eloquent\Model;
 use Filament\Forms\Components\TextInput;
+use Filament\Tables\Actions\ActionGroup;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Enums\FiltersLayout;
+use App\Filament\Exports\ProductExporter;
 use App\Filament\Resources\BrandResource;
 use Filament\Forms\Components\FileUpload;
 use Filament\Tables\Actions\DeleteAction;
 use Filament\Tables\Filters\QueryBuilder;
+use Illuminate\Database\Eloquent\Builder;
 use Filament\Forms\Components\Placeholder;
+use Filament\Tables\Actions\RestoreAction;
+use Filament\Tables\Filters\TrashedFilter;
 use App\Filament\Resources\CategoryResource;
 use Filament\Tables\Actions\BulkActionGroup;
 use Filament\Forms\Components\Actions\Action;
 use Filament\Forms\Components\MarkdownEditor;
 use Filament\Tables\Actions\DeleteBulkAction;
+use Filament\Tables\Actions\ExportBulkAction;
+use Filament\Tables\Actions\ForceDeleteAction;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\ProductResource\Pages\EditProduct;
 use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\Resources\ProductResource\Pages\CreateProduct;
-use Filament\Tables\Filters\QueryBuilder\Constraints\DateConstraint;
-use Filament\Tables\Filters\QueryBuilder\Constraints\TextConstraint;
+use App\Filament\Resources\ProductResource\Widgets\ProductStats;
 use Filament\Tables\Filters\QueryBuilder\Constraints\NumberConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\SelectConstraint;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint;
 use App\Filament\Resources\BrandResource\RelationManagers\ProductsRelationManager;
-use Filament\Notifications\Notification;
 use Filament\Tables\Filters\QueryBuilder\Constraints\RelationshipConstraint\Operators\IsRelatedToOperator;
 
 class ProductResource extends Resource
 {
     protected static ?string $model = Product::class;
 
+    protected static ?string $cluster = Products::class;
+
+    protected static ?string $recordTitleAttribute = 'name';
+
     protected static ?string $navigationGroup = 'Fancy Master';
 
     protected static ?int $navigationSort = 1;
 
     protected static ?string $navigationIcon = 'heroicon-o-cube';
-    
-    public static function getNavigationBadgeTooltip(): ?string
-    {
-        return 'Product(s) with low stock';
-    }
 
     public static function form(Form $form, Brand $brand = null, Category $category = null): Form
     {
@@ -143,7 +150,7 @@ class ProductResource extends Resource
                             ->required()
                             ->numeric()
                             ->default(1)
-                            ->helperText('The safety stock is the limit stock for your products which alerts you if the product stock will soon be out of stock.'),
+                            ->hint('Limit of product\'s stock.'),
                     ]),
 
                     Grid::make()->schema([
@@ -200,6 +207,11 @@ class ProductResource extends Resource
     {
         return $table
             ->columns([
+                TextColumn::make('No')
+                    ->rowIndex()
+                    ->alignCenter()
+                    ->toggleable(),
+
                 ImageColumn::make('image')
                     ->alignCenter()
                     ->defaultImageUrl(url('/images/default.jpg'))
@@ -224,7 +236,6 @@ class ProductResource extends Resource
 
                 TextColumn::make('categories.name')
                     ->searchable()
-                    ->sortable()
                     ->toggleable(),
 
                 TextColumn::make('description')
@@ -299,11 +310,18 @@ class ProductResource extends Resource
                     ->toggleable()
                     ->toggledHiddenByDefault(),
             ])
+            ->defaultSort('code')
+            ->actions([ActionGroup::make([
+                EditAction::make()->color('info'),
+                DeleteAction::make(),
+                ForceDeleteAction::make(),
+                RestoreAction::make(),
+            ])])
             ->filters([
+                TrashedFilter::make()->columnSpanFull(),
+
                 QueryBuilder::make()
                     ->constraints([
-                        TextConstraint::make('code'),
-                        TextConstraint::make('name'),
                         RelationshipConstraint::make('brand')
                             ->selectable(
                                 IsRelatedToOperator::make()
@@ -319,52 +337,22 @@ class ProductResource extends Resource
                                     ->searchable()
                                     ->multiple(),
                             ),
-                        TextConstraint::make('description'),
                         NumberConstraint::make('pre_tax_price')->icon('heroicon-m-currency-dollar'),
                         NumberConstraint::make('post_tax_price')->icon('heroicon-m-currency-dollar'),
                         NumberConstraint::make('cost')->icon('heroicon-m-currency-dollar'),
                         NumberConstraint::make('margin')->icon('heroicon-m-currency-dollar'),
-                        TextConstraint::make('sku')->label('SKU (Stock Keeping Unit)'),
-                        TextConstraint::make('barcode')->label('Barcode (ISBN, UPC, GTIN, etc.)'),
                         NumberConstraint::make('stock'),
                         NumberConstraint::make('security_stock'),
                         SelectConstraint::make('unit_type')->options(['Pcs', 'Pack/Box', 'Kg']),
                         NumberConstraint::make('total_items'),
-                        DateConstraint::make('created_at'),
-                        DateConstraint::make('updated_at'),
-                    ])->constraintPickerColumns(2),
+                    ]),
             ], layout: FiltersLayout::AboveContentCollapsible)
-            ->defaultSort('code')
-            ->actions([
-                EditAction::make(),
-                DeleteAction::make()
-                    ->action(function ($data, $record) {
-                        if ($record->purchaseItems()->exists() || $record->saleItems()->exists()) {
-                            Notification::make()
-                                ->danger()
-                                ->title('Product is in use')
-                                ->body('Product is exist on transactions.')
-                                ->send();
-
-                            return;
-                        }
-
-                        Notification::make()
-                            ->success()
-                            ->title('Deleted')
-                            ->send();
-
-                        $record->delete();
-                    }),
-            ])
-            ->bulkActions([BulkActionGroup::make([DeleteBulkAction::make()])]);
+            ->groupedBulkActions([ExportBulkAction::make()->exporter(ProductExporter::class), DeleteBulkAction::make()]);
     }
 
-    public static function getRelations(): array
+    public static function getWidgets(): array
     {
-        return [
-            //
-        ];
+        return [ProductStats::class];
     }
 
     public static function getPages(): array
@@ -376,11 +364,36 @@ class ProductResource extends Resource
         ];
     }
 
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['code', 'name', 'brand.name', 'categories.name', 'sku', 'barcode'];
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->withoutGlobalScope(SoftDeletingScope::class);
+    }
+
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        return parent::getGlobalSearchEloquentQuery()->with(['brand', 'categories']);
+    }
+
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        return [
+            $record->brand?->name . ' - ' . $record->categories?->pluck('name')->join(', '),
+            Str::limit($record->description, 30)
+        ];
+    }
+
     public static function getNavigationBadge(): ?string
     {
-        /** @var class-string<Model> $modelClass */
-        $modelClass = static::$model;
+        return (string) static::$model::whereColumn('stock', '<=', 'security_stock')->count();
+    }
 
-        return (string) $modelClass::whereColumn('stock', '<=', 'security_stock')->count();
+    public static function getNavigationBadgeTooltip(): ?string
+    {
+        return 'Low stock products';
     }
 }

@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Purchase extends Model
 {
     use HasFactory;
+    use SoftDeletes;
 
     public function vendor()
     {
@@ -17,10 +19,5 @@ class Purchase extends Model
     public function purchaseItems()
     {
         return $this->hasMany(PurchaseItem::class);
-    }
-
-    public function purchaseReturns()
-    {
-        return $this->hasMany(PurchaseReturn::class);
     }
 }

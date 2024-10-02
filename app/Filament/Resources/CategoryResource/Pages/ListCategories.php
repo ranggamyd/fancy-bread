@@ -2,9 +2,11 @@
 
 namespace App\Filament\Resources\CategoryResource\Pages;
 
-use App\Filament\Resources\CategoryResource;
-use Filament\Actions;
+use Filament\Actions\CreateAction;
+use Filament\Actions\ExportAction;
 use Filament\Resources\Pages\ListRecords;
+use App\Filament\Exports\CategoryExporter;
+use App\Filament\Resources\CategoryResource;
 
 class ListCategories extends ListRecords
 {
@@ -12,8 +14,6 @@ class ListCategories extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [
-            Actions\CreateAction::make(),
-        ];
+        return [ExportAction::make()->exporter(CategoryExporter::class), CreateAction::make()];
     }
 }

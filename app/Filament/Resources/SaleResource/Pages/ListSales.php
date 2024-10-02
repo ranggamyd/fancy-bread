@@ -2,18 +2,23 @@
 
 namespace App\Filament\Resources\SaleResource\Pages;
 
-use Filament\Actions;
+use Filament\Actions\CreateAction;
+use Filament\Actions\ExportAction;
+use App\Filament\Exports\SaleExporter;
 use Filament\Resources\Components\Tab;
 use App\Filament\Resources\SaleResource;
 use Filament\Resources\Pages\ListRecords;
+use Filament\Pages\Concerns\ExposesTableToWidgets;
 
 class ListSales extends ListRecords
 {
+    use ExposesTableToWidgets;
+
     protected static string $resource = SaleResource::class;
 
-    protected function getHeaderActions(): array
+    protected function getHeaderWidgets(): array
     {
-        return [Actions\CreateAction::make()];
+        return SaleResource::getWidgets();
     }
 
     public function getTabs(): array
@@ -24,5 +29,10 @@ class ListSales extends ListRecords
             'delivered' => Tab::make()->query(fn ($query) => $query->where('status', 'delivered')),
             'returned' => Tab::make()->query(fn ($query) => $query->where('status', 'returned')),
         ];
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [ExportAction::make()->exporter(SaleExporter::class), CreateAction::make()];
     }
 }

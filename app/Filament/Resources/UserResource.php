@@ -5,25 +5,35 @@ namespace App\Filament\Resources;
 use App\Models\User;
 use Filament\Forms\Form;
 use Filament\Tables\Table;
+use Illuminate\Support\Str;
 use Filament\Resources\Resource;
+use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Radio;
 use Illuminate\Support\Facades\Hash;
+use App\Filament\Exports\UserExporter;
+use Filament\Forms\Components\Textarea;
 use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
+use Illuminate\Database\Eloquent\Model;
 use Filament\Forms\Components\TextInput;
+use Filament\Tables\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Actions\DeleteAction;
 use Filament\Tables\Columns\Layout\Split;
 use Filament\Tables\Columns\Layout\Stack;
 use Illuminate\Validation\Rules\Password;
-use Filament\Forms\Components\MarkdownEditor;
+use Filament\Tables\Actions\RestoreAction;
+use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Actions\DeleteBulkAction;
+use Filament\Tables\Actions\ExportBulkAction;
+use Filament\Tables\Actions\ForceDeleteAction;
 use App\Filament\Resources\UserResource\Pages\ManageUsers;
-use Filament\Forms\Components\Grid;
 
 class UserResource extends Resource
 {
     protected static ?string $model = User::class;
+
+    protected static ?string $recordTitleAttribute = 'name';
 
     protected static ?string $navigationGroup = 'Miscellaneous';
 
@@ -85,8 +95,7 @@ class UserResource extends Resource
                         ->same('password'),
                 ]),
 
-            MarkdownEditor::make('address')
-                ->columnSpanFull(),
+            Textarea::make('address')->columnSpanFull(),
         ]);
     }
 
@@ -114,8 +123,8 @@ class UserResource extends Resource
                         ->alignCenter()
                         ->date()
                         ->searchable()
-                        ->toggleable()
-                        ->toggledHiddenByDefault(),
+                        ->sortable()
+                        ->toggleable(),
                 ]),
 
                 Stack::make([
@@ -130,30 +139,35 @@ class UserResource extends Resource
                         ->alignLeft(),
                 ])->space(2),
             ])->from('md'),
-        ])->filters([
-            //
         ])->actions([
-            EditAction::make()
-                ->mutateFormDataUsing(function ($record, array $data): array {
-                    if (!filled($data['password'])) unset($data['password']);
+            ActionGroup::make([
+                EditAction::make()
+                    ->mutateFormDataUsing(function (array $data): array {
+                        if (!filled($data['password'])) unset($data['password']);
 
-                    return $data;
-                }),
-            DeleteAction::make(),
-        ])->groupedBulkActions([DeleteBulkAction::make()]);
-    }
+                        return $data;
+                    })->color('info'),
 
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
+                DeleteAction::make(),
+                ForceDeleteAction::make(),
+                RestoreAction::make(),
+            ])
+        ])->filters([TrashedFilter::make()
+        ])->groupedBulkActions([DeleteBulkAction::make(), ExportBulkAction::make()->exporter(UserExporter::class)]);
     }
 
     public static function getPages(): array
     {
-        return [
-            'index' => ManageUsers::route('/'),
-        ];
+        return ['index' => ManageUsers::route('/')];
+    }
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['name', 'email', 'phone', 'address'];
+    }
+
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        return [Str::limit($record->address, 30)];
     }
 }

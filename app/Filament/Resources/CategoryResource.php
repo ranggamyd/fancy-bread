@@ -5,17 +5,23 @@ namespace App\Filament\Resources;
 use App\Models\Category;
 use Filament\Forms\Form;
 use Filament\Tables\Table;
+use Illuminate\Support\Str;
 use Filament\Resources\Resource;
+use App\Filament\Clusters\Products;
 use Filament\Forms\Components\Group;
 use Filament\Forms\Components\Section;
 use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
+use Illuminate\Database\Eloquent\Model;
 use Filament\Forms\Components\TextInput;
+use Filament\Tables\Actions\ActionGroup;
 use Filament\Tables\Actions\DeleteAction;
+use App\Filament\Exports\CategoryExporter;
 use Filament\Forms\Components\Placeholder;
 use Filament\Tables\Actions\BulkActionGroup;
 use Filament\Forms\Components\MarkdownEditor;
 use Filament\Tables\Actions\DeleteBulkAction;
+use Filament\Tables\Actions\ExportBulkAction;
 use App\Filament\Resources\CategoryResource\Pages\EditCategory;
 use App\Filament\Resources\CategoryResource\Pages\CreateCategory;
 use App\Filament\Resources\CategoryResource\Pages\ListCategories;
@@ -24,6 +30,10 @@ use App\Filament\Resources\CategoryResource\RelationManagers\ProductsRelationMan
 class CategoryResource extends Resource
 {
     protected static ?string $model = Category::class;
+
+    protected static ?string $cluster = Products::class;
+
+    protected static ?string $recordTitleAttribute = 'name';
 
     protected static ?string $navigationGroup = 'Fancy Master';
 
@@ -63,16 +73,21 @@ class CategoryResource extends Resource
     {
         return $table
             ->columns([
+                TextColumn::make('No')
+                    ->rowIndex()
+                    ->alignCenter()
+                    ->toggleable(),
+
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable()
                     ->toggleable(),
 
-                TextColumn::make('products_count')
-                    ->counts('products')
-                    ->alignCenter()
+                TextColumn::make('products.name')
+                    ->listWithLineBreaks()
+                    ->limitList(2)
+                    ->expandableLimitedList()
                     ->searchable()
-                    ->sortable()
                     ->toggleable(),
 
                 TextColumn::make('description')
@@ -83,11 +98,8 @@ class CategoryResource extends Resource
                     ->toggledHiddenByDefault(),
             ])
             ->defaultSort('name')
-            ->filters([
-                //
-            ])
-            ->actions([EditAction::make(), DeleteAction::make()])
-            ->bulkActions([BulkActionGroup::make([DeleteBulkAction::make()])]);
+            ->actions([ActionGroup::make([EditAction::make()->color('info'), DeleteAction::make()])])
+            ->groupedBulkActions([DeleteBulkAction::make(), ExportBulkAction::make()->exporter(CategoryExporter::class)]);
     }
 
     public static function getRelations(): array
@@ -102,5 +114,10 @@ class CategoryResource extends Resource
             'create' => CreateCategory::route('/create'),
             'edit' => EditCategory::route('/{record}/edit'),
         ];
+    }
+
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        return [Str::limit($record->description, 30)];
     }
 }

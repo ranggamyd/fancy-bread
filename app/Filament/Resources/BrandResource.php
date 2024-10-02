@@ -5,17 +5,21 @@ namespace App\Filament\Resources;
 use App\Models\Brand;
 use Filament\Forms\Form;
 use Filament\Tables\Table;
+use Illuminate\Support\Str;
 use Filament\Resources\Resource;
+use App\Filament\Clusters\Products;
 use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Group;
 use Filament\Forms\Components\Section;
 use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
+use Illuminate\Database\Eloquent\Model;
 use Filament\Forms\Components\TextInput;
-use Filament\Notifications\Notification;
+use Filament\Tables\Actions\ActionGroup;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Forms\Components\FileUpload;
 use Filament\Tables\Actions\DeleteAction;
+use Illuminate\Database\Eloquent\Builder;
 use Filament\Forms\Components\Placeholder;
 use Filament\Tables\Actions\BulkActionGroup;
 use Filament\Forms\Components\MarkdownEditor;
@@ -28,6 +32,10 @@ use App\Filament\Resources\BrandResource\RelationManagers\ProductsRelationManage
 class BrandResource extends Resource
 {
     protected static ?string $model = Brand::class;
+
+    protected static ?string $cluster = Products::class;
+
+    protected static ?string $recordTitleAttribute = 'name';
 
     protected static ?string $navigationGroup = 'Fancy Master';
 
@@ -87,6 +95,11 @@ class BrandResource extends Resource
     {
         return $table
             ->columns([
+                TextColumn::make('No')
+                    ->rowIndex()
+                    ->alignCenter()
+                    ->toggleable(),
+
                 ImageColumn::make('image')
                     ->alignCenter()
                     ->defaultImageUrl(url('/images/default.jpg'))
@@ -104,11 +117,11 @@ class BrandResource extends Resource
                     ->sortable()
                     ->toggleable(),
 
-                TextColumn::make('products_count')
-                    ->counts('products')
-                    ->alignCenter()
+                TextColumn::make('products.name')
+                    ->listWithLineBreaks()
+                    ->limitList(2)
+                    ->expandableLimitedList()
                     ->searchable()
-                    ->sortable()
                     ->toggleable(),
 
                 TextColumn::make('description')
@@ -119,33 +132,8 @@ class BrandResource extends Resource
                     ->toggledHiddenByDefault(),
             ])
             ->defaultSort('code')
-            ->filters([
-                //
-            ])
-            ->deferFilters()
-            ->actions([
-                EditAction::make(),
-                DeleteAction::make()
-                    ->action(function ($data, $record) {
-                        if ($record->products()->exists()) {
-                            Notification::make()
-                                ->danger()
-                                ->title('Brand is in use')
-                                ->body('Brand is exist on products.')
-                                ->send();
-
-                            return;
-                        }
-
-                        Notification::make()
-                            ->success()
-                            ->title('Deleted')
-                            ->send();
-
-                        $record->delete();
-                    }),
-            ])
-            ->bulkActions([BulkActionGroup::make([DeleteBulkAction::make()])]);
+            ->actions([ActionGroup::make([EditAction::make()->color('info'), DeleteAction::make()])])
+            ->groupedBulkActions([DeleteBulkAction::make()]);
     }
 
     public static function getRelations(): array
@@ -160,5 +148,15 @@ class BrandResource extends Resource
             'create' => CreateBrand::route('/create'),
             'edit' => EditBrand::route('/{record}/edit'),
         ];
+    }
+
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['code', 'name'];
+    }
+
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        return [Str::limit($record->description, 30)];
     }
 }

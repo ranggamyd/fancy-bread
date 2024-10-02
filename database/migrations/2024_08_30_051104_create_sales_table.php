@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('code')->unique();
             $table->string('invoice')->unique();
             $table->string('goods_receipt_number')->unique()->nullable();
-            $table->foreignId('customer_id')->constrained()->restrictOnDelete();
+            $table->foreignId('customer_id');
             $table->text('notes')->nullable();
             $table->enum('status', ['new', 'delivered', 'returned'])->default('new');
             $table->integer('total_items');
@@ -24,9 +24,10 @@ return new class extends Migration
             $table->float('shipping_price')->default(0);
             $table->float('total_discount')->default(0);
             $table->float('grandtotal');
-            $table->enum('payment_status', ['unpaid', 'uncomplete', 'paid'])->default('unpaid');
             $table->dateTime('date')->defaultNow();
+            $table->foreignId('driver_id');
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

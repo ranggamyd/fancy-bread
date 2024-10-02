@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\BrandResource\Pages;
 
-use App\Filament\Resources\BrandResource;
-use Filament\Actions;
+use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
+use App\Filament\Resources\BrandResource;
 
 class EditBrand extends EditRecord
 {
@@ -17,8 +17,6 @@ class EditBrand extends EditRecord
 
     protected function getHeaderActions(): array
     {
-        return [
-            Actions\DeleteAction::make(),
-        ];
+        return [DeleteAction::make()];
     }
 }

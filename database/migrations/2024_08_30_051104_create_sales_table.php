@@ -17,7 +17,6 @@ return new class extends Migration
             $table->string('invoice')->unique();
             $table->string('goods_receipt_number')->unique()->nullable();
             $table->foreignId('customer_id');
-            $table->text('notes')->nullable();
             $table->enum('status', ['new', 'delivered', 'returned'])->default('new');
             $table->integer('total_items');
             $table->float('subtotal');
@@ -26,6 +25,7 @@ return new class extends Migration
             $table->float('grandtotal');
             $table->dateTime('date')->defaultNow();
             $table->foreignId('driver_id');
+            $table->enum('notes', ['belum_ttf', 'sudah_ttf'])->default('belum_ttf');
             $table->timestamps();
             $table->softDeletes();
         });

@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\SaleReceiptResource\Pages;
 
+use App\Enums\Notes;
+use App\Models\Sale;
 use Illuminate\Support\Facades\Auth;
 use App\Filament\Resources\SaleResource;
 use Filament\Notifications\Notification;
@@ -24,6 +26,13 @@ class CreateSaleReceipt extends CreateRecord
     protected function afterCreate(): void
     {
         $saleReceipt = $this->record;
+
+        foreach ($saleReceipt->saleReceiptInvoices as $item) {
+            $sale = Sale::find($item->sale_id);
+            $sale->notes = Notes::SudahTTF;
+
+            $sale->save();
+        }
 
         Notification::make()
             ->icon('heroicon-o-banknotes')

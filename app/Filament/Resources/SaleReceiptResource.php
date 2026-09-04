@@ -39,6 +39,7 @@ use Filament\Tables\Actions\RestoreAction;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Forms\Components\ToggleButtons;
 use Filament\Tables\Actions\BulkActionGroup;
+use Illuminate\Database\Eloquent\Collection;
 use App\Filament\Exports\SaleReceiptExporter;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Tables\Actions\DeleteBulkAction;
@@ -137,7 +138,7 @@ class SaleReceiptResource extends Resource
                             ->default(array_reduce($saleReceiptInvoices, fn($i, $item) => $i + $item['grandtotal'], 0))
                             ->inlineLabel(),
                     ]),
-                ])->collapsed(),
+                ]),
 
                 Section::make('Sale Returns')->schema([
                     static::getRepeaterSaleReceiptReturns($saleReceiptReturns)->columnSpanFull(),
@@ -392,7 +393,7 @@ class SaleReceiptResource extends Resource
                 TrashedFilter::make(),
             ])
             ->groups([GroupFilter::make('date')->date()->collapsible()])
-            ->groupedBulkActions([DeleteBulkAction::make(), ExportBulkAction::make()->exporter(SaleReceiptExporter::class)]);
+            ->groupedBulkActions([ExportBulkAction::make()->exporter(SaleReceiptExporter::class), DeleteBulkAction::make()]);
     }
 
     public static function getRelations(): array

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\Notes;
 use App\Enums\Status;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -12,7 +13,7 @@ class Sale extends Model
     use HasFactory;
     use SoftDeletes;
 
-    protected $casts = ['status' => Status::class];
+    protected $casts = ['status' => Status::class, 'notes' => Notes::class];
 
     public function customer()
     {

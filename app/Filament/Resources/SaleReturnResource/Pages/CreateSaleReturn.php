@@ -4,6 +4,8 @@ namespace App\Filament\Resources\SaleReturnResource\Pages;
 
 use App\Models\Sale;
 use App\Enums\Status;
+use App\Models\SaleReceipt;
+use App\Models\SaleReceiptReturn;
 use Illuminate\Support\Facades\Auth;
 use App\Filament\Resources\SaleResource;
 use Filament\Notifications\Notification;
@@ -30,8 +32,19 @@ class CreateSaleReturn extends CreateRecord
         foreach ($saleReturn->saleReturnInvoices as $item) {
             $sale = Sale::find($item->sale_id);
             $sale->status = Status::Returned;
-
             $sale->save();
+
+            $saleReceipt = SaleReceipt::whereHas('saleReceiptInvoices', fn($q) => $q->where('sale_id', $sale->id))->first();
+            SaleReceiptReturn::create([
+                'sale_receipt_id' => $saleReceipt->id,
+                'sale_return_id' => $saleReturn->id,
+            ]);
+
+            $saleReceipt->return_items += $saleReturn->total_items;
+            $saleReceipt->total_return += $saleReturn->grandtotal;
+            $saleReceipt->subtotal = $saleReceipt->subtotal - $saleReturn->subtotal;
+            $saleReceipt->grandtotal = $saleReceipt->grandtotal - $saleReturn->subtotal;
+            $saleReceipt->save();
         }
 
         Notification::make()

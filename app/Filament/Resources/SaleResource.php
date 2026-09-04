@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use Carbon\Carbon;
+use App\Enums\Notes;
 use App\Models\Sale;
 use App\Enums\Status;
 use App\Models\Driver;
@@ -120,14 +121,21 @@ class SaleResource extends Resource
                         ->manageOptionForm(fn(Form $form) => CustomerResource::form($form))
                         ->manageOptionActions(fn(Action $action) => $action->modalWidth('6xl')),
 
-                    ToggleButtons::make('status')
-                        ->inline()
-                        ->options(Status::class)
-                        ->default('new')
-                        ->hidden(fn(?Sale $record) => $record === null)
-                        ->required(),
+                    Grid::make()->schema([
+                        ToggleButtons::make('status')
+                            ->inline()
+                            ->options(Status::class)
+                            ->default('new')
+                            ->hidden(fn(?Sale $record) => $record === null)
+                            ->required(),
 
-                    Textarea::make('notes')->rows(1),
+                        ToggleButtons::make('notes')
+                            ->inline()
+                            ->options(Notes::class)
+                            ->default('belum_ttf')
+                            ->hidden(fn(?Sale $record) => $record === null)
+                            ->required(),
+                    ])
                 ]),
 
                 Section::make('Sale Items')->schema([static::getRepeaterSaleItems()]),
@@ -261,13 +269,6 @@ class SaleResource extends Resource
                     ->sortable()
                     ->toggleable(),
 
-                TextColumn::make('notes')
-                    ->limit(10)
-                    ->searchable()
-                    ->sortable()
-                    ->toggleable()
-                    ->toggledHiddenByDefault(),
-
                 TextColumn::make('saleItems.product.name')
                     ->listWithLineBreaks()
                     ->limitList(2)
@@ -314,7 +315,12 @@ class SaleResource extends Resource
                 TextColumn::make('driver.name')
                     ->searchable()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->toggledHiddenByDefault(),
+
+                TextColumn::make('notes')
+                    ->alignCenter()
+                    ->badge(),
             ])
             ->defaultSort('date', 'desc')
             ->actions([
@@ -365,23 +371,47 @@ class SaleResource extends Resource
                     ->preload()
                     ->searchable(),
 
+                SelectFilter::make('notes')
+                    ->options(Notes::class)
+                    ->multiple()
+                    ->preload()
+                    ->searchable(),
+
                 SelectFilter::make('driver')
                     ->relationship('driver', 'name')
                     ->multiple()
                     ->preload()
                     ->searchable(),
-                    
+
                 TrashedFilter::make(),
             ])
             ->groups([
                 GroupFilter::make('date')->label('Sold at')->date()->collapsible(),
                 GroupFilter::make('customer.name')->collapsible(),
                 GroupFilter::make('status')->collapsible(),
+                GroupFilter::make('notes')->collapsible(),
                 GroupFilter::make('driver.name')->collapsible(),
             ])
             ->checkIfRecordIsSelectableUsing(fn(Model $record): bool => $record->goods_receipt_number !== null)
             ->selectCurrentPageOnly()
             ->groupedBulkActions([
+                BulkAction::make('Create new receipt')
+                    ->icon('heroicon-o-banknotes')
+                    ->color('success')
+                    ->action(function (Collection $records) {
+                        foreach ($records as $item) {
+                            if ($item->saleReceiptInvoice) {
+                                return Notification::make()
+                                    ->danger()
+                                    ->title('Failed')
+                                    ->body('Receipt have been created.')
+                                    ->send();
+                            }
+                        };
+
+                        return redirect(SaleReceiptResource::getUrl('create', ['sales' => implode(',', $records->pluck('id')->toArray())]));
+                    }),
+
                 BulkAction::make('Return sales')
                     ->icon('heroicon-o-arrow-uturn-left')
                     ->color('danger')
@@ -395,6 +425,14 @@ class SaleResource extends Resource
                                     ->send();
                             }
 
+                            if ($item->notes !== Notes::SudahTTF) {
+                                return Notification::make()
+                                    ->danger()
+                                    ->title('Failed')
+                                    ->body('Sales Receipt not found.')
+                                    ->send();
+                            }
+
                             if ($item->customer_id !== $records[0]['customer_id']) {
                                 return Notification::make()
                                     ->danger()
@@ -405,23 +443,6 @@ class SaleResource extends Resource
                         };
 
                         return redirect(SaleReturnResource::getUrl('create', ['sales' => implode(',', $records->pluck('id')->toArray())]));
-                    }),
-
-                BulkAction::make('Create new receipt')
-                    ->icon('heroicon-o-banknotes')
-                    ->color('success')
-                    ->action(function (Collection $records) {
-                        foreach ($records as $item) {
-                            if ($item->saleReceiptInvoice) {
-                                return Notification::make()
-                                    ->danger()
-                                    ->title('Failed')
-                                    ->body('Sales Receipt have been created.')
-                                    ->send();
-                            }
-                        };
-
-                        return redirect(SaleReceiptResource::getUrl('create', ['sales' => implode(',', $records->pluck('id')->toArray())]));
                     }),
 
                 ExportBulkAction::make()->exporter(SaleExporter::class)

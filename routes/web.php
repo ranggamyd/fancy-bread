@@ -8,8 +8,7 @@ use Illuminate\Support\Facades\Route;
 use Filament\Notifications\Notification;
 
 Route::get('/', function () {
-    // return view('welcome');
-    return redirect('admin');
+    return view('home');
 });
 
 Route::get('admin/purchases/{purchase}/print', function (Purchase $purchase) {
